@@ -239,7 +239,7 @@ func (m *mux) addHostListener(host *engine.Host, l *engine.Listener) error {
 	s, exists := m.servers[l.Address]
 	if !exists {
 		var err error
-		if s, err = newServer(m, host, router, l); err != nil {
+		if s, err = newSrv(m, host, l); err != nil {
 			return err
 		}
 		m.servers[l.Address] = s

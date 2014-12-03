@@ -21,8 +21,7 @@ type srv struct {
 	srv         *manners.GracefulServer
 	proxy       *vulcan.Proxy
 	listener    engine.Listener
-	listeners   map[string]engine.Listener
-	keyPairs    map[string]*engine.KeyPair
+	keyPairs    map[engine.HostKey]engine.KeyPair
 	options     Options
 	state       int
 }
@@ -45,81 +44,50 @@ func (s *srv) String() string {
 	return fmt.Sprintf("%s->srv(%v, %v)", s.mux, s.state, s.listener)
 }
 
-func newSrv(m *mux, host *engine.Host, l *engine.Listener) (*srv, error) {
-	keyPairs := make(map[string]*engine.KeyPair)
-	if host.Options.KeyPair != nil {
-		keyPairs[host.Name] = host.Options.KeyPair
+func newSrv(m *mux, hk engine.HostKey, keyPair *engine.KeyPair, l *engine.Listener) (*srv, error) {
+	keyPairs := make(map[engine.HostKey]engine.KeyPair)
+	if keyPair != nil {
+		keyPairs[hk] = *keyPair
 	}
 
 	proxy, err := vulcan.NewProxy(m.router)
 	if err != nil {
 		return nil, err
 	}
-
-	defaultHost := ""
-	if host.Options.Default {
-		defaultHost = host.Name
-	}
-
 	return &srv{
 		mux:         m,
-		listeners:   map[string]engine.Listener{host.Name: *l},
 		proxy:       proxy,
 		listener:    *l,
-		defaultHost: defaultHost,
+		defaultHost: "",
 		keyPairs:    keyPairs,
 		state:       srvStateInit,
 	}, nil
 }
 
-func (s *srv) deleteHost(hostname string) (bool, error) {
-	delete(s.listeners, hostname)
-
-	if len(s.listeners) == 0 {
-		s.shutdown()
-		return true, nil
-	}
-
-	if _, exists := s.keyPairs[hostname]; exists {
-		delete(s.keyPairs, hostname)
-		if s.defaultHost == hostname {
-			s.defaultHost = ""
-		}
-		return false, s.reload()
-	}
-	return false, nil
+func (s *srv) deleteKeyPair(hk engine.HostKey) (bool, error) {
+	delete(s.keyPairs, hk)
+	return false, s.reload()
 }
 
 func (s *srv) isTLS() bool {
 	return s.listener.Protocol == engine.HTTPS
 }
 
-func (s *srv) updateHostKeyPair(hostname string, keyPair *engine.KeyPair) error {
-	old, exists := s.keyPairs[hostname]
-	if !exists {
-		return fmt.Errorf("host %s keyPairificate not found", hostname)
-	}
-	if old.Equals(keyPair) {
+func (s *srv) upsertKeyPair(hk engine.HostKey, keyPair *engine.KeyPair) error {
+	old, exists := s.keyPairs[hk]
+	if exists && old.Equals(keyPair) {
 		return nil
 	}
-	s.keyPairs[hostname] = keyPair
+	s.keyPairs[hk] = *keyPair
 	return s.reload()
 }
 
-func (s *srv) addHost(host *engine.Host, listener *engine.Listener) error {
-	if l, exists := s.listeners[host.Name]; exists {
-		return fmt.Errorf("host %s arlready has a registered listener %s", host, l)
-	}
-
-	s.listeners[host.Name] = *listener
-
+func (s *srv) setDefaultHost(host engine.Host) error {
+	oldDefault := s.defaultHost
 	if host.Options.Default {
 		s.defaultHost = host.Name
 	}
-
-	// We are serving TLS, reload server
-	if host.Options.KeyPair != nil {
-		s.keyPairs[host.Name] = host.Options.KeyPair
+	if oldDefault != s.defaultHost && s.isTLS() {
 		return s.reload()
 	}
 	return nil
@@ -216,7 +184,7 @@ func (s *srv) hasHost(hostname string) bool {
 	return exists
 }
 
-func newTLSConfig(keyPairs map[string]*engine.KeyPair, defaultHost string) (*tls.Config, error) {
+func newTLSConfig(keyPairs map[engine.HostKey]engine.KeyPair, defaultHost string) (*tls.Config, error) {
 	config := &tls.Config{}
 
 	if config.NextProtos == nil {
@@ -229,7 +197,7 @@ func newTLSConfig(keyPairs map[string]*engine.KeyPair, defaultHost string) (*tls
 		if err != nil {
 			return nil, err
 		}
-		pairs[h] = keyPair
+		pairs[h.Name] = keyPair
 	}
 
 	config.Certificates = make([]tls.Certificate, 0, len(keyPairs))
