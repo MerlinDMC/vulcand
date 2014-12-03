@@ -46,7 +46,7 @@ func newFrontend(m *mux, f engine.Frontend, b *backend) (*frontend, error) {
 	}
 
 	// Register metric emitters and performance monitors
-	hloc.GetObserverChain().Upsert(Metrics, NewReporter(m.options.MetricsClient, f.Id))
+	hloc.GetObserverChain().Upsert(Metrics, NewReporter(m.options.MetricsClient, engine.FrontendKey{Id: f.Id}))
 	hloc.GetObserverChain().Upsert(PerfMon, m.perfMon)
 
 	fr := &frontend{
@@ -62,7 +62,7 @@ func newFrontend(m *mux, f engine.Frontend, b *backend) (*frontend, error) {
 	}
 
 	// Add the frontend to the router
-	if err := router.AddRoute(settings.Route, hloc); err != nil {
+	if err := router.AddLocation(settings.Route, hloc); err != nil {
 		return nil, err
 	}
 
@@ -84,7 +84,7 @@ func (f *frontend) syncServers() error {
 	// First, collect and parse servers to add
 	newServers := map[string]*muxServer{}
 	for _, s := range f.backend.servers {
-		ep, err := newMuxServer(engine.ServerKey{BackendKey: engine.BackendKey{Id: f.backend.backend.Id}, Id: s.Id}, &s, f.mux.perfMon)
+		ep, err := newMuxServer(f, engine.ServerKey{BackendKey: engine.BackendKey{Id: f.backend.backend.Id}, Id: s.Id}, s, f.mux.perfMon)
 		if err != nil {
 			return fmt.Errorf("failed to create load balancer from %v", &s)
 		}
@@ -174,10 +174,10 @@ func (f *frontend) update(ef engine.Frontend, b *backend) error {
 
 	if oldsettings.Route != settings.Route {
 		log.Infof("%v updating route from %v to %v", oldsettings.Route, settings.Route)
-		if f.mux.router.AddRoute(settings.Route, f); err != nil {
+		if f.mux.router.AddLocation(settings.Route, f.hloc); err != nil {
 			return err
 		}
-		if err := f.mux.router.RemoveRoute(oldsettings.Route); err != nil {
+		if err := f.mux.router.RemoveLocationByExpression(oldsettings.Route); err != nil {
 			return err
 		}
 	}
@@ -187,5 +187,5 @@ func (f *frontend) update(ef engine.Frontend, b *backend) error {
 func (f *frontend) remove() error {
 	f.mux.perfMon.deleteFrontend(f.key)
 	f.backend.unlinkFrontend(f.key)
-	return f.mux.router.RemoveRoute(f.frontend.HTTPSettings().Route)
+	return f.mux.router.RemoveLocationByExpression(f.frontend.HTTPSettings().Route)
 }

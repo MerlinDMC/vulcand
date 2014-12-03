@@ -13,9 +13,9 @@ import (
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan"
 )
 
-// server contains all that is necessary to run the HTTP(s) server. server does not work on its own,
+// srv contains all that is necessary to run the HTTP(s) server. server does not work on its own,
 // it heavily depends on MuxServer and acts as its internal data structure.
-type server struct {
+type srv struct {
 	defaultHost string
 	mux         *mux
 	srv         *manners.GracefulServer
@@ -27,7 +27,7 @@ type server struct {
 	state       int
 }
 
-func (s *server) GetFile() (*FileDescriptor, error) {
+func (s *srv) GetFile() (*FileDescriptor, error) {
 	if !s.hasListeners() || s.srv == nil {
 		return nil, nil
 	}
@@ -41,11 +41,11 @@ func (s *server) GetFile() (*FileDescriptor, error) {
 	}, nil
 }
 
-func (s *server) String() string {
+func (s *srv) String() string {
 	return fmt.Sprintf("%s->srv(%v, %v)", s.mux, s.state, s.listener)
 }
 
-func newServer(m *mux, host *engine.Host, l *engine.Listener) (*server, error) {
+func newSrv(m *mux, host *engine.Host, l *engine.Listener) (*srv, error) {
 	keyPairs := make(map[string]*engine.KeyPair)
 	if host.Options.KeyPair != nil {
 		keyPairs[host.Name] = host.Options.KeyPair
@@ -61,7 +61,7 @@ func newServer(m *mux, host *engine.Host, l *engine.Listener) (*server, error) {
 		defaultHost = host.Name
 	}
 
-	return &server{
+	return &srv{
 		mux:         m,
 		listeners:   map[string]engine.Listener{host.Name: *l},
 		proxy:       proxy,
@@ -72,7 +72,7 @@ func newServer(m *mux, host *engine.Host, l *engine.Listener) (*server, error) {
 	}, nil
 }
 
-func (s *server) deleteHost(hostname string) (bool, error) {
+func (s *srv) deleteHost(hostname string) (bool, error) {
 	delete(s.listeners, hostname)
 
 	if len(s.listeners) == 0 {
@@ -90,11 +90,11 @@ func (s *server) deleteHost(hostname string) (bool, error) {
 	return false, nil
 }
 
-func (srv *server) isTLS() bool {
-	return srv.listener.Protocol == engine.HTTPS
+func (s *srv) isTLS() bool {
+	return s.listener.Protocol == engine.HTTPS
 }
 
-func (s *server) updateHostKeyPair(hostname string, keyPair *engine.KeyPair) error {
+func (s *srv) updateHostKeyPair(hostname string, keyPair *engine.KeyPair) error {
 	old, exists := s.keyPairs[hostname]
 	if !exists {
 		return fmt.Errorf("host %s keyPairificate not found", hostname)
@@ -106,7 +106,7 @@ func (s *server) updateHostKeyPair(hostname string, keyPair *engine.KeyPair) err
 	return s.reload()
 }
 
-func (s *server) addHost(host *engine.Host, router route.Router, listener *engine.Listener) error {
+func (s *srv) addHost(host *engine.Host, listener *engine.Listener) error {
 	if l, exists := s.listeners[host.Name]; exists {
 		return fmt.Errorf("host %s arlready has a registered listener %s", host, l)
 	}
@@ -125,15 +125,15 @@ func (s *server) addHost(host *engine.Host, router route.Router, listener *engin
 	return nil
 }
 
-func (s *server) isServing() bool {
+func (s *srv) isServing() bool {
 	return s.state == srvStateActive
 }
 
-func (s *server) hasListeners() bool {
+func (s *srv) hasListeners() bool {
 	return s.state == srvStateActive || s.state == srvStateHijacked
 }
 
-func (s *server) takeFile(f *FileDescriptor) error {
+func (s *srv) takeFile(f *FileDescriptor) error {
 	log.Infof("%s takeFile %d", s, f)
 
 	listener, err := f.ToListener()
@@ -165,7 +165,7 @@ but the file descriptor that was given corresponded to a listener of type %T. Mo
 	return nil
 }
 
-func (s *server) newHTTPServer() *http.Server {
+func (s *srv) newHTTPServer() *http.Server {
 	return &http.Server{
 		Handler:        s.proxy,
 		ReadTimeout:    s.options.ReadTimeout,
@@ -174,7 +174,7 @@ func (s *server) newHTTPServer() *http.Server {
 	}
 }
 
-func (s *server) reload() error {
+func (s *srv) reload() error {
 	if !s.isServing() {
 		return nil
 	}
@@ -200,18 +200,18 @@ func (s *server) reload() error {
 	return nil
 }
 
-func (s *server) shutdown() {
+func (s *srv) shutdown() {
 	if s.srv != nil {
 		s.srv.Close()
 	}
 }
 
-func (s *server) hasListener(hostname, listenerId string) bool {
+func (s *srv) hasListener(hostname, listenerId string) bool {
 	l, exists := s.listeners[hostname]
 	return exists && l.Id == listenerId
 }
 
-func (s *server) hasHost(hostname string) bool {
+func (s *srv) hasHost(hostname string) bool {
 	_, exists := s.listeners[hostname]
 	return exists
 }
@@ -251,7 +251,7 @@ func newTLSConfig(keyPairs map[string]*engine.KeyPair, defaultHost string) (*tls
 	return config, nil
 }
 
-func (s *server) start() error {
+func (s *srv) start() error {
 	log.Infof("%s start", s)
 	switch s.state {
 	case srvStateInit:
@@ -285,7 +285,7 @@ func (s *server) start() error {
 	return fmt.Errorf("%v Calling start in unsupported state", s)
 }
 
-func (s *server) serve(srv *manners.GracefulServer) {
+func (s *srv) serve(srv *manners.GracefulServer) {
 	log.Infof("%s serve", s)
 
 	s.mux.wg.Add(1)

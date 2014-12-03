@@ -3,20 +3,22 @@ package proxy
 import (
 	"fmt"
 
+	"github.com/mailgun/vulcand/engine"
+
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/metrics"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/request"
 )
 
 // Reporter reports real time metrics to the Statsd client
 type Reporter struct {
-	c         metrics.Client
-	locPrefix string
+	c  metrics.Client
+	fk engine.FrontendKey
 }
 
-func NewReporter(c metrics.Client, locationId string) *Reporter {
+func NewReporter(c metrics.Client, fk engine.FrontendKey) *Reporter {
 	return &Reporter{
-		c:         c,
-		locPrefix: locationId,
+		c:  c,
+		fk: fk,
 	}
 }
 
@@ -27,11 +29,11 @@ func (rp *Reporter) ObserveResponse(r request.Request, a request.Attempt) {
 	if a == nil {
 		return
 	}
-	rp.emitMetrics(r, a, "location", rp.locPrefix)
+	rp.emitMetrics(r, a, "frontend", rp.fk.Id)
 	if a.GetEndpoint() != nil {
-		ve, ok := a.GetEndpoint().(*muxEndpoint)
+		srv, ok := a.GetEndpoint().(*muxServer)
 		if ok {
-			rp.emitMetrics(r, a, "upstream", ve.location.Upstream.Id, ve.endpoint.Id)
+			rp.emitMetrics(r, a, "server", srv.sk.BackendKey.Id, srv.sk.Id)
 		}
 	}
 }

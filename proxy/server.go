@@ -12,17 +12,19 @@ import (
 type muxServer struct {
 	url *url.URL
 	id  string
+	s   engine.Server
 	sk  engine.ServerKey
+	f   *frontend
 
 	mon *perfMon
 }
 
-func newMuxServer(sk engine.ServerKey, s *engine.Server, mon *perfMon) (*muxServer, error) {
+func newMuxServer(f *frontend, sk engine.ServerKey, s engine.Server, mon *perfMon) (*muxServer, error) {
 	url, err := netutils.ParseUrl(s.URL)
 	if err != nil {
 		return nil, err
 	}
-	return &muxServer{id: s.Id, url: url, mon: mon}, nil
+	return &muxServer{id: s.Id, url: url, mon: mon, f: f, s: s, sk: sk}, nil
 }
 
 func (e *muxServer) String() string {

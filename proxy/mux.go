@@ -19,7 +19,7 @@ type mux struct {
 	id int
 
 	// Each listener address has a server associated with it
-	servers map[engine.Address]*server
+	servers map[engine.Address]*srv
 
 	backends map[engine.BackendKey]*backend
 
@@ -56,14 +56,12 @@ func New(id int, o Options) (*mux, error) {
 	return &mux{
 		id:          id,
 		router:      exproute.NewExpRouter(),
-		servers:     make(map[engine.Address]*server),
+		servers:     make(map[engine.Address]*srv),
 		options:     o,
 		connTracker: newConnTracker(o.MetricsClient),
 		wg:          &sync.WaitGroup{},
 		mtx:         &sync.RWMutex{},
 		perfMon:     newPerfMon(o.TimeProvider),
-		upstreams:   make(map[engine.UpstreamKey]*upstream),
-		locations:   make(map[engine.LocationKey]*location),
 	}, nil
 }
 
@@ -85,28 +83,28 @@ func (m *mux) GetFiles() ([]*FileDescriptor, error) {
 	return fds, nil
 }
 
-func (m *mux) FrontendStats(engine.FrontendKey) (*engine.RoundTripStats, error) {
-	return nil, fmt.Errorf("fixme")
+func (m *mux) FrontendStats(key engine.FrontendKey) (*engine.RoundTripStats, error) {
+	return m.perfMon.frontendStats(key)
 }
 
-func (m *mux) ServerStats(engine.ServerKey) (*engine.RoundTripStats, error) {
-	return nil, fmt.Errorf("fixme")
+func (m *mux) ServerStats(key engine.ServerKey) (*engine.RoundTripStats, error) {
+	return m.perfMon.serverStats(key)
 }
 
-func (m *mux) BackendStats(engine.BackendKey) (*engine.RoundTripStats, error) {
-	return nil, fmt.Errorf("fixme")
+func (m *mux) BackendStats(key engine.BackendKey) (*engine.RoundTripStats, error) {
+	return m.perfMon.backendStats(key)
 }
 
 // TopFrontends returns locations sorted by criteria (faulty, slow, most used)
 // if hostname or backendId is present, will filter out locations for that host or backendId
-func (m *mux) TopFrontends(*engine.BackendKey) ([]engine.Frontend, error) {
-	return nil, fmt.Errorf("fixme")
+func (m *mux) TopFrontends(key *engine.BackendKey) ([]engine.Frontend, error) {
+	return m.perfMon.topFrontends(key)
 }
 
 // TopServers returns endpoints sorted by criteria (faulty, slow, mos used)
 // if backendId is not empty, will filter out endpoints for that backendId
-func (m *mux) TopServers(*engine.BackendKey) ([]engine.Server, error) {
-	return nil, fmt.Errorf("fixme")
+func (m *mux) TopServers(key *engine.BackendKey) ([]engine.Server, error) {
+	return m.perfMon.topServers(key)
 }
 
 func (m *mux) TakeFiles(files []*FileDescriptor) error {
@@ -186,6 +184,107 @@ func (m *mux) stopServers() {
 	}
 }
 
+func (m *mux) UpsertHost(host engine.Host) error {
+	log.Infof("%s UpsertHost(%s)", m, host)
+
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	for _, s := range m.servers {
+		if s.hasHost(host.Name) && s.isTLS() {
+			if err := s.updateHostKeyPair(host.Name, host.Options.KeyPair); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (m *mux) DeleteHost(hk engine.HostKey) error {
+	log.Infof("%s DeleteHost %v", m, hk)
+
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	for _, s := range m.servers {
+		closed, err := s.deleteHost(hk.Name)
+		if err != nil {
+			return err
+		}
+		if closed {
+			log.Infof("%s was closed", s)
+			delete(m.servers, s.listener.Address)
+		}
+	}
+	return nil
+}
+
+func (m *mux) UpsertListener(hk engine.HostKey, l engine.Listener) error {
+	log.Infof("%v UpsertListener(%v, %v)", m, hk, l)
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	return nil
+}
+
+func (m *mux) DeleteListener(lk engine.ListenerKey) error {
+	log.Infof("%v DeleteListener(%v)", m, lk)
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	return nil
+}
+
+func (m *mux) addHostListener(host *engine.Host, l *engine.Listener) error {
+	s, exists := m.servers[l.Address]
+	if !exists {
+		var err error
+		if s, err = newServer(m, host, router, l); err != nil {
+			return err
+		}
+		m.servers[l.Address] = s
+		// If we are active, start the server immediatelly
+		if m.state == stateActive {
+			log.Infof("Mux is in active state, starting the HTTP server")
+			if err := s.start(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// We can not listen for different protocols on the same socket
+	if s.listener.Protocol != l.Protocol {
+		return fmt.Errorf("conflicting protocol %s and %s", s.listener.Protocol, l.Protocol)
+	}
+
+	return s.addHost(host, l)
+}
+
+func (m *mux) hasHostListener(hostname, listenerId string) bool {
+	for _, s := range m.servers {
+		if s.hasListener(hostname, listenerId) {
+			return true
+		}
+	}
+	return false
+}
+
+/*
+func (m *mux) upsertHost(host engine.Host) error {
+	if m.options.DefaultListener != nil {
+		host.Listeners = append(host.Listeners, m.options.DefaultListener)
+	}
+
+	for _, l := range host.Listeners {
+		if err := m.addHostListener(host, router, l); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+*/
+
 /*
 func (m *mux) UpsertBackend(b engine.Backend) error {
 	log.Infof("%v UpsertBackend(%v)", m, b)
@@ -227,45 +326,6 @@ func (m *mux) DeleteUpstream(upstreamId string) error {
 	return nil
 }
 
-func (m *mux) UpsertHost(host engine.Host) error {
-	log.Infof("%s UpsertHost(%s)", m, host)
-
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-
-	if err := m.upsertHost(host); err != nil {
-		return err
-	}
-
-	for _, s := range m.servers {
-		if s.hasHost(hostname) && s.isTLS() {
-			if err := s.updateHostKeyPair(hostname, keyPair); err != nil {
-				return err
-			}
-		}
-	}
-}
-
-func (m *mux) DeleteHost(hk engine.HostKey) error {
-	log.Infof("%s DeleteHost %v", m, hk)
-
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-
-	for _, s := range m.servers {
-		closed, err := s.deleteHost(hostname)
-		if err != nil {
-			return err
-		}
-		if closed {
-			log.Infof("%s was closed", s)
-			delete(m.servers, s.listener.Address)
-		}
-	}
-
-	delete(m.hostRouters, hostname)
-	return nil
-}
 
 func (m *mux) AddHostListener(h *engine.Host, l *engine.Listener) error {
 	log.Infof("%s AddHostLsitener %s %s", m, h, l)
@@ -465,61 +525,7 @@ func (m *mux) deleteLocationMiddleware(host *engine.Host, loc *engine.Location, 
 	return l.deleteMiddleware(mType, mId)
 }
 
-func (m *mux) addHostListener(host *engine.Host, router route.Router, l *engine.Listener) error {
-	s, exists := m.servers[l.Address]
-	if !exists {
-		var err error
-		if s, err = newServer(m, host, router, l); err != nil {
-			return err
-		}
-		m.servers[l.Address] = s
-		// If we are active, start the server immediatelly
-		if m.state == stateActive {
-			log.Infof("Mux is in active state, starting the HTTP server")
-			if err := s.start(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
 
-	// We can not listen for different protocols on the same socket
-	if s.listener.Protocol != l.Protocol {
-		return fmt.Errorf("conflicting protocol %s and %s", s.listener.Protocol, l.Protocol)
-	}
-
-	return s.addHost(host, router, l)
-}
-
-func (m *mux) upsertHost(host *engine.Host) error {
-	if _, exists := m.hostRouters[host.Name]; exists {
-		return nil
-	}
-
-	router := exproute.NewExpRouter()
-	m.hostRouters[host.Name] = router
-
-	if m.options.DefaultListener != nil {
-		host.Listeners = append(host.Listeners, m.options.DefaultListener)
-	}
-
-	for _, l := range host.Listeners {
-		if err := m.addHostListener(host, router, l); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (m *mux) hasHostListener(hostname, listenerId string) bool {
-	for _, s := range m.servers {
-		if s.hasListener(hostname, listenerId) {
-			return true
-		}
-	}
-	return false
-}
 
 func (m *mux) deleteLocation(host *engine.Host, locationId string) error {
 	key := engine.LocationKey{Hostname: host.Name, Id: locationId}

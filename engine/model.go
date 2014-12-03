@@ -129,15 +129,13 @@ type Frontend struct {
 	Type      string
 	BackendId string
 
-	Settings interface{} `json:",omitempty"`
+	Stats    *RoundTripStats `json:",omitempty"`
+	Settings interface{}     `json:",omitempty"`
 }
 
 type HTTPFrontendSettings struct {
 	Route   string
 	Options HTTPFrontendOptions
-
-	// Stats holds combined stats from all endpoints in the location
-	Stats *RoundTripStats `json:",omitempty"`
 }
 
 // Limits contains various limits one can supply for a location.
@@ -303,6 +301,7 @@ type Middleware struct {
 type Backend struct {
 	Id       string
 	Type     string
+	Stats    *RoundTripStats `json:",omitempty"`
 	Settings interface{}
 }
 
