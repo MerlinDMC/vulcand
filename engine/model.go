@@ -318,6 +318,10 @@ func NewHTTPBackend(id string, s HTTPBackendSettings) (*Backend, error) {
 	}, nil
 }
 
+func (b *Backend) HTTPSettings() HTTPBackendSettings {
+	return b.Settings.(HTTPBackendSettings)
+}
+
 func (b *Backend) String() string {
 	return fmt.Sprintf("Backend(id=%s)", b.Id)
 }

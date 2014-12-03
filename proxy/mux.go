@@ -8,10 +8,9 @@ import (
 
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/log"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/metrics"
-	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/route"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/timetools"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/location/httploc"
-	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/netutils"
+	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/route/exproute"
 )
 
 // mux is capable of listening on multiple interfaces, graceful shutdowns and updating TLS certificates
@@ -36,7 +35,7 @@ type mux struct {
 	mtx *sync.RWMutex
 
 	// Router will be shared between mulitple listeners
-	router route.Router
+	router *exproute.ExpRouter
 
 	// Current server stats
 	state muxState
@@ -56,7 +55,7 @@ func New(id int, o Options) (*mux, error) {
 	o = setDefaults(o)
 	return &mux{
 		id:          id,
-		hostRouters: make(map[string]*exproute.ExpRouter),
+		router:      exproute.NewExpRouter(),
 		servers:     make(map[engine.Address]*server),
 		options:     o,
 		connTracker: newConnTracker(o.MetricsClient),

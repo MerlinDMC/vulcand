@@ -49,11 +49,6 @@ func newFrontend(m *mux, f engine.Frontend, b *backend) (*frontend, error) {
 	hloc.GetObserverChain().Upsert(Metrics, NewReporter(m.options.MetricsClient, f.Id))
 	hloc.GetObserverChain().Upsert(PerfMon, m.perfMon)
 
-	// Add the frontend to the router
-	if err := router.AddRoute(settings.Route, hloc); err != nil {
-		return nil, err
-	}
-
 	fr := &frontend{
 		key:      engine.FrontendKey{Id: f.Id},
 		hloc:     hloc,
@@ -66,9 +61,18 @@ func newFrontend(m *mux, f engine.Frontend, b *backend) (*frontend, error) {
 		return nil, err
 	}
 
+	// Add the frontend to the router
+	if err := router.AddRoute(settings.Route, hloc); err != nil {
+		return nil, err
+	}
+
 	b.linkFrontend(engine.FrontendKey{f.Id}, fr)
 
 	return fr, nil
+}
+
+func (f *frontend) String() string {
+	return fmt.Sprintf("%v frontend(wrap=%v)", f.mux, &f.frontend)
 }
 
 func (f *frontend) syncServers() error {
@@ -138,6 +142,7 @@ func (f *frontend) updateBackend(b *backend) error {
 
 	// Switching backends, set the new transport and perform switch
 	if b.backend.Id != oldb.backend.Id {
+		log.Infof("%v updating backend from %v to %v", f, &oldb, &f.backend)
 		oldb.unlinkFrontend(f.key)
 		b.linkFrontend(f.key, f)
 		f.hloc.SetTransport(b.transport)
@@ -145,24 +150,42 @@ func (f *frontend) updateBackend(b *backend) error {
 	return f.syncServers()
 }
 
-/*
-func (l *frontend) updateOptions(f *engine.Frontend) error {
-	l.f = *f
-	options, err := f.GetOptions()
+// TODO: implement rollback in case of suboperation failure
+func (f *frontend) update(ef engine.Frontend, b *backend) error {
+	oldf := f.frontend
+	f.frontend = ef
+
+	settings := f.frontend.HTTPSettings()
+	options, err := settings.GetOptions()
 	if err != nil {
 		return err
 	}
-	options.Transport = l.b.t
-	return l.hloc.SetOptions(*options)
+
+	options.Transport = f.backend.transport
+	if err := f.hloc.SetOptions(*options); err != nil {
+		return err
+	}
+
+	if err := f.updateBackend(b); err != nil {
+		return err
+	}
+
+	oldsettings := oldf.HTTPSettings()
+
+	if oldsettings.Route != settings.Route {
+		log.Infof("%v updating route from %v to %v", oldsettings.Route, settings.Route)
+		if f.mux.router.AddRoute(settings.Route, f); err != nil {
+			return err
+		}
+		if err := f.mux.router.RemoveRoute(oldsettings.Route); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func (l *frontend) remove() error {
-	router := l.m.getRouter(l.f.Hostname)
-	if router == nil {
-		return fmt.Errorf("router for %s not found", l.f.Hostname)
-	}
-	l.m.perfMon.deleteFrontend(l.f.GetUniqueId())
-	l.b.deleteFrontend(l.f.GetUniqueId())
-	return router.RemoveFrontendByExpression(l.f.Path)
+func (f *frontend) remove() error {
+	f.mux.perfMon.deleteFrontend(f.key)
+	f.backend.unlinkFrontend(f.key)
+	return f.mux.router.RemoveRoute(f.frontend.HTTPSettings().Route)
 }
-*/

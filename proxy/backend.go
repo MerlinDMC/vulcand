@@ -1,11 +1,12 @@
 package proxy
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/mailgun/vulcand/engine"
 
-	//	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/log"
+	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/log"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/location/httploc"
 )
 
@@ -32,6 +33,10 @@ func newBackend(m *mux, b engine.Backend) (*backend, error) {
 	}, nil
 }
 
+func (b *backend) String() string {
+	return fmt.Sprintf("%v upstream(wrap=%v)", b.mux, &b.backend)
+}
+
 func (b *backend) linkFrontend(key engine.FrontendKey, f *frontend) {
 	b.frontends[key] = f
 }
@@ -40,68 +45,73 @@ func (b *backend) unlinkFrontend(key engine.FrontendKey) {
 	delete(b.frontends, key)
 }
 
-/*
-
-
-func (b *backend) deleteFrontend(key engine.FrontendKey) {
-	delete(b.fs, key)
-}
-
 func (b *backend) Close() error {
-	b.t.CloseIdleConnections()
+	b.transport.CloseIdleConnections()
 	return nil
 }
 
 func (b *backend) update(be engine.Backend) error {
-	if err := b.updateSettings(be.Settings.(engine.HTTPBackendSettings)); err != nil {
+	if err := b.updateSettings(be); err != nil {
 		return err
 	}
+	b.backend = be
+	return nil
 }
 
-func (b *backend) updateSettings(opts engine.HTTPBackendSettings) error {
+func (b *backend) updateSettings(be engine.Backend) error {
+	olds := b.backend.HTTPSettings()
+	news := be.HTTPSettings()
+
 	// Nothing changed in transport options
-	if u.up.Options.Equals(opts) {
+	if news.Equals(olds) {
 		return nil
 	}
-	u.up.Options = opts
-
-	o, err := u.m.getTransportOptions(&u.up)
+	o, err := b.mux.getTransportOptions(be)
 	if err != nil {
 		return err
 	}
 	t := httploc.NewTransport(*o)
-	u.t.CloseIdleConnections()
-	u.t = t
-	for _, l := range u.locs {
-		if err := l.hloc.SetTransport(u.t); err != nil {
-			log.Errorf("Failed to set transport: %v", err)
+	b.transport.CloseIdleConnections()
+	b.transport = t
+	for _, f := range b.frontends {
+		if err := f.hloc.SetTransport(t); err != nil {
+			log.Errorf("%v failed to set transport for %v, err: %v", b, f, err)
 		}
 	}
 	return nil
 }
 
-func (b *backend) updateServers(s []engine.Server) error {
-	b.s = s
-	for _, f := range u.fs {
-		f.b = b
-		if err := f.updateBackend(f.b); err != nil {
-			log.Errorf("failed to update %v err: %s", l, err)
+func (b *backend) indexOfServer(id string) int {
+	for i := range b.servers {
+		if b.servers[i].Id == id {
+			return i
+		}
+	}
+	return -1
+}
+
+func (b *backend) upsertServer(s engine.Server) error {
+	if i := b.indexOfServer(s.Id); i != -1 {
+		b.servers[i] = s
+	}
+	b.servers = append(b.servers, s)
+	return b.updateFrontends()
+}
+
+func (b *backend) deleteServer(sk engine.ServerKey) error {
+	i := b.indexOfServer(sk.Id)
+	if i == -1 {
+		return fmt.Errorf("%v not found %v", b, sk)
+	}
+	b.servers = append(b.servers[:i], b.servers[i+1:]...)
+	return b.updateFrontends()
+}
+
+func (b *backend) updateFrontends() error {
+	for _, f := range b.frontends {
+		if err := f.updateBackend(b); err != nil {
+			return err
 		}
 	}
 	return nil
 }
-
-func newBackend(m *mux, b *engine.Backend) (*backend, error) {
-	o, err := m.getTransportOptions(b)
-	if err != nil {
-		return nil, err
-	}
-	t := httploc.NewTransport(*o)
-	return &backend{
-		m:    m,
-		up:   *up,
-		t:    t,
-		locs: make(map[engine.FrontendKey]*frontend),
-	}, nil
-}
-*/

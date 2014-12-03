@@ -11,8 +11,6 @@ import (
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/log"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/manners"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan"
-	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/route"
-	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/route/hostroute"
 )
 
 // server contains all that is necessary to run the HTTP(s) server. server does not work on its own,
@@ -20,7 +18,6 @@ import (
 type server struct {
 	defaultHost string
 	mux         *mux
-	router      *hostroute.HostRouter
 	srv         *manners.GracefulServer
 	proxy       *vulcan.Proxy
 	listener    engine.Listener
@@ -48,19 +45,14 @@ func (s *server) String() string {
 	return fmt.Sprintf("%s->srv(%v, %v)", s.mux, s.state, s.listener)
 }
 
-func newServer(m *mux, host *engine.Host, r route.Router, l *engine.Listener) (*server, error) {
+func newServer(m *mux, host *engine.Host, l *engine.Listener) (*server, error) {
 	keyPairs := make(map[string]*engine.KeyPair)
 	if host.Options.KeyPair != nil {
 		keyPairs[host.Name] = host.Options.KeyPair
 	}
 
-	router := hostroute.NewHostRouter()
-	proxy, err := vulcan.NewProxy(router)
+	proxy, err := vulcan.NewProxy(m.router)
 	if err != nil {
-		return nil, err
-	}
-
-	if err := router.SetRouter(host.Name, r); err != nil {
 		return nil, err
 	}
 
@@ -72,7 +64,6 @@ func newServer(m *mux, host *engine.Host, r route.Router, l *engine.Listener) (*
 	return &server{
 		mux:         m,
 		listeners:   map[string]engine.Listener{host.Name: *l},
-		router:      router,
 		proxy:       proxy,
 		listener:    *l,
 		defaultHost: defaultHost,
@@ -82,10 +73,6 @@ func newServer(m *mux, host *engine.Host, r route.Router, l *engine.Listener) (*
 }
 
 func (s *server) deleteHost(hostname string) (bool, error) {
-	if s.router.GetRouter(hostname) == nil {
-		return false, fmt.Errorf("host %s not found", hostname)
-	}
-	s.router.RemoveRouter(hostname)
 	delete(s.listeners, hostname)
 
 	if len(s.listeners) == 0 {
@@ -120,19 +107,11 @@ func (s *server) updateHostKeyPair(hostname string, keyPair *engine.KeyPair) err
 }
 
 func (s *server) addHost(host *engine.Host, router route.Router, listener *engine.Listener) error {
-	if s.router.GetRouter(host.Name) != nil {
-		return fmt.Errorf("host %s already registered", host)
-	}
-
 	if l, exists := s.listeners[host.Name]; exists {
 		return fmt.Errorf("host %s arlready has a registered listener %s", host, l)
 	}
 
 	s.listeners[host.Name] = *listener
-
-	if err := s.router.SetRouter(host.Name, router); err != nil {
-		return err
-	}
 
 	if host.Options.Default {
 		s.defaultHost = host.Name
