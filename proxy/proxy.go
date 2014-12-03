@@ -1,4 +1,4 @@
-package server
+package proxy
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ import (
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/timetools"
 )
 
-type Server interface {
+type Proxy interface {
 	engine.StatsProvider
 
 	UpsertHost(engine.Host) error
@@ -59,7 +59,7 @@ type Options struct {
 	TimeProvider    timetools.TimeProvider
 }
 
-type NewServerFn func(id int) (Server, error)
+type NewproxyFn func(id int) (Proxy, error)
 
 type FileDescriptor struct {
 	Address engine.Address

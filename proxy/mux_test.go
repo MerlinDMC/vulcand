@@ -1,4 +1,4 @@
-package server
+package proxy
 
 import (
 	"net/http"
@@ -19,12 +19,12 @@ func TestServer(t *testing.T) { TestingT(t) }
 var _ = Suite(&ServerSuite{})
 
 type ServerSuite struct {
-	mux    *MuxServer
+	mux    *mux
 	lastId int
 }
 
 func (s *ServerSuite) SetUpTest(c *C) {
-	m, err := NewMuxServerWithOptions(s.lastId, Options{})
+	m, err := New(s.lastId, Options{})
 	c.Assert(err, IsNil)
 	s.mux = m
 }
@@ -62,7 +62,7 @@ func (s *ServerSuite) TestServerDefaultListener(c *C) {
 
 	defaultListener := &Listener{Protocol: HTTP, Address: Address{"tcp", "localhost:41000"}}
 
-	m, err := NewMuxServerWithOptions(s.lastId, Options{DefaultListener: defaultListener})
+	m, err := New(s.lastId, Options{DefaultListener: defaultListener})
 	defer m.Stop(true)
 	c.Assert(err, IsNil)
 	s.mux = m
@@ -754,7 +754,7 @@ func (s *ServerSuite) TestTakeFiles(c *C) {
 
 	c.Assert(GETResponse(c, MakeURL(l, h.Listeners[0]), Opts{}), Equals, "Hi, I'm endpoint 1")
 
-	mux2, err := NewMuxServerWithOptions(s.lastId, Options{})
+	mux2, err := New(s.lastId, Options{})
 	c.Assert(err, IsNil)
 
 	e2 := NewTestResponder("Hi, I'm endpoint 2")

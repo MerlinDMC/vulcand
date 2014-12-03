@@ -1,4 +1,4 @@
-package server
+package proxy
 
 import (
 	"crypto/tls"
@@ -6,25 +6,26 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/mailgun/vulcand/engine"
+
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/log"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/manners"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/route"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/route/hostroute"
-	"github.com/mailgun/vulcand/backend"
 )
 
 // server contains all that is necessary to run the HTTP(s) server. server does not work on its own,
 // it heavily depends on MuxServer and acts as its internal data structure.
 type server struct {
 	defaultHost string
-	mux         *MuxServer
+	mux         *mux
 	router      *hostroute.HostRouter
 	srv         *manners.GracefulServer
 	proxy       *vulcan.Proxy
-	listener    backend.Listener
-	listeners   map[string]backend.Listener
-	keyPairs    map[string]*backend.KeyPair
+	listener    engine.Listener
+	listeners   map[string]engine.Listener
+	keyPairs    map[string]*engine.KeyPair
 	options     Options
 	state       int
 }
@@ -47,10 +48,10 @@ func (s *server) String() string {
 	return fmt.Sprintf("%s->srv(%v, %v)", s.mux, s.state, s.listener)
 }
 
-func newServer(m *MuxServer, host *backend.Host, r route.Router, l *backend.Listener) (*server, error) {
-	keyPairs := make(map[string]*backend.KeyPair)
-	if host.KeyPair != nil {
-		keyPairs[host.Name] = host.KeyPair
+func newServer(m *mux, host *engine.Host, r route.Router, l *engine.Listener) (*server, error) {
+	keyPairs := make(map[string]*engine.KeyPair)
+	if host.Options.KeyPair != nil {
+		keyPairs[host.Name] = host.Options.KeyPair
 	}
 
 	router := hostroute.NewHostRouter()
@@ -70,7 +71,7 @@ func newServer(m *MuxServer, host *backend.Host, r route.Router, l *backend.List
 
 	return &server{
 		mux:         m,
-		listeners:   map[string]backend.Listener{host.Name: *l},
+		listeners:   map[string]engine.Listener{host.Name: *l},
 		router:      router,
 		proxy:       proxy,
 		listener:    *l,
@@ -103,10 +104,10 @@ func (s *server) deleteHost(hostname string) (bool, error) {
 }
 
 func (srv *server) isTLS() bool {
-	return srv.listener.Protocol == backend.HTTPS
+	return srv.listener.Protocol == engine.HTTPS
 }
 
-func (s *server) updateHostKeyPair(hostname string, keyPair *backend.KeyPair) error {
+func (s *server) updateHostKeyPair(hostname string, keyPair *engine.KeyPair) error {
 	old, exists := s.keyPairs[hostname]
 	if !exists {
 		return fmt.Errorf("host %s keyPairificate not found", hostname)
@@ -118,7 +119,7 @@ func (s *server) updateHostKeyPair(hostname string, keyPair *backend.KeyPair) er
 	return s.reload()
 }
 
-func (s *server) addHost(host *backend.Host, router route.Router, listener *backend.Listener) error {
+func (s *server) addHost(host *engine.Host, router route.Router, listener *engine.Listener) error {
 	if s.router.GetRouter(host.Name) != nil {
 		return fmt.Errorf("host %s already registered", host)
 	}
@@ -138,8 +139,8 @@ func (s *server) addHost(host *backend.Host, router route.Router, listener *back
 	}
 
 	// We are serving TLS, reload server
-	if host.KeyPair != nil {
-		s.keyPairs[host.Name] = host.KeyPair
+	if host.Options.KeyPair != nil {
+		s.keyPairs[host.Name] = host.Options.KeyPair
 		return s.reload()
 	}
 	return nil
@@ -236,7 +237,7 @@ func (s *server) hasHost(hostname string) bool {
 	return exists
 }
 
-func newTLSConfig(keyPairs map[string]*backend.KeyPair, defaultHost string) (*tls.Config, error) {
+func newTLSConfig(keyPairs map[string]*engine.KeyPair, defaultHost string) (*tls.Config, error) {
 	config := &tls.Config{}
 
 	if config.NextProtos == nil {

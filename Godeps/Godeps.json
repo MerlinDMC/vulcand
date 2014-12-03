@@ -1,6 +1,6 @@
 {
 	"ImportPath": "github.com/mailgun/vulcand",
-	"GoVersion": "go1.3",
+	"GoVersion": "go1.3.1",
 	"Packages": [
 		"./..."
 	],
@@ -69,7 +69,7 @@
 		},
 		{
 			"ImportPath": "github.com/mailgun/route",
-			"Rev": "ba019ca92cec60c97eb23e5c678086da613a4a7e"
+			"Rev": "433466d45670df1e777517ec3112217bef30753f"
 		},
 		{
 			"ImportPath": "github.com/mailgun/scroll",
@@ -85,8 +85,8 @@
 		},
 		{
 			"ImportPath": "github.com/mailgun/vulcan",
-			"Comment": "v0.1-244-g961decf",
-			"Rev": "961decfd08c4460fb7cd0001e1b100e6cce31435"
+			"Comment": "v0.1-243-gd9e2c71",
+			"Rev": "d9e2c7108297b24c6a66bb9e34c256cc531ac2ec"
 		},
 		{
 			"ImportPath": "gopkg.in/check.v1",

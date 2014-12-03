@@ -1,42 +1,43 @@
-package server
+package proxy
 
 import (
 	"fmt"
 	"sort"
 	"sync"
 
+	"github.com/mailgun/vulcand/engine"
+
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/log"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/timetools"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/metrics"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/request"
-	"github.com/mailgun/vulcand/backend"
 )
 
 // perfMon stands for performance monitor, it is observer that watches realtime metrics
 // for locations, endpoints and upstreams
 type perfMon struct {
-	m            *sync.RWMutex
-	locations    map[string]*metricsBucket
-	endpoints    map[string]*metricsBucket
-	upstreams    map[string]*metricsBucket
-	timeProvider timetools.TimeProvider
+	m         *sync.RWMutex
+	locations map[string]*metricsBucket
+	endpoints map[string]*metricsBucket
+	upstreams map[string]*metricsBucket
+	clock     timetools.TimeProvider
 }
 
-func newPerfMon(timeProvider timetools.TimeProvider) *perfMon {
+func newPerfMon(clock timetools.TimeProvider) *perfMon {
 	return &perfMon{
-		m:            &sync.RWMutex{},
-		locations:    make(map[string]*metricsBucket),
-		endpoints:    make(map[string]*metricsBucket),
-		upstreams:    make(map[string]*metricsBucket),
-		timeProvider: timeProvider,
+		m:         &sync.RWMutex{},
+		locations: make(map[string]*metricsBucket),
+		endpoints: make(map[string]*metricsBucket),
+		upstreams: make(map[string]*metricsBucket),
+		clock:     clock,
 	}
 }
 
-func (m *perfMon) getTopLocations(hostname, upstreamId string) ([]*backend.Location, error) {
+func (m *perfMon) getTopFrontends(hostname, upstreamId string) ([]*engine.Frontend, error) {
 	m.m.RLock()
 	defer m.m.RUnlock()
 
-	locations := []*backend.Location{}
+	locations := []*engine.Frontend{}
 	for _, m := range m.locations {
 		l := m.endpoint.location
 		if hostname != "" && l.Hostname != hostname {
@@ -54,11 +55,11 @@ func (m *perfMon) getTopLocations(hostname, upstreamId string) ([]*backend.Locat
 	return locations, nil
 }
 
-func (m *perfMon) getTopEndpoints(upstreamId string) ([]*backend.Endpoint, error) {
+func (m *perfMon) getTopServers(upstreamId string) ([]*engine.Server, error) {
 	m.m.RLock()
 	defer m.m.RUnlock()
 
-	endpoints := []*backend.Endpoint{}
+	endpoints := []*engine.Server{}
 	for _, m := range m.endpoints {
 		e := m.endpoint.endpoint
 		if upstreamId != "" && e.UpstreamId != upstreamId {
@@ -73,7 +74,7 @@ func (m *perfMon) getTopEndpoints(upstreamId string) ([]*backend.Endpoint, error
 	return endpoints, nil
 }
 
-func (m *perfMon) resetLocationStats(l *backend.Location) error {
+func (m *perfMon) resetFrontendStats(l *engine.Frontend) error {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -85,7 +86,7 @@ func (m *perfMon) resetLocationStats(l *backend.Location) error {
 	return b.resetStats()
 }
 
-func (m *perfMon) getLocationStats(l *backend.Location) (*backend.RoundTripStats, error) {
+func (m *perfMon) getFrontendStats(l *engine.Frontend) (*engine.RoundTripStats, error) {
 	m.m.RLock()
 	defer m.m.RUnlock()
 
@@ -97,7 +98,7 @@ func (m *perfMon) getLocationStats(l *backend.Location) (*backend.RoundTripStats
 	return b.getStats()
 }
 
-func (m *perfMon) getEndpointStats(e *backend.Endpoint) (*backend.RoundTripStats, error) {
+func (m *perfMon) getServerStats(e *engine.Server) (*engine.RoundTripStats, error) {
 	m.m.RLock()
 	defer m.m.RUnlock()
 
@@ -108,7 +109,7 @@ func (m *perfMon) getEndpointStats(e *backend.Endpoint) (*backend.RoundTripStats
 	return b.getStats()
 }
 
-func (m *perfMon) getUpstreamStats(u *backend.Upstream) (*backend.RoundTripStats, error) {
+func (m *perfMon) getUpstreamStats(u *engine.Upstream) (*engine.RoundTripStats, error) {
 	m.m.RLock()
 	defer m.m.RUnlock()
 
@@ -123,13 +124,13 @@ func (m *perfMon) ObserveRequest(r request.Request) {
 }
 
 func (m *perfMon) ObserveResponse(r request.Request, a request.Attempt) {
-	if a == nil || a.GetEndpoint() == nil {
+	if a == nil || a.GetServer() == nil {
 		return
 	}
 
-	e, ok := a.GetEndpoint().(*muxEndpoint)
+	e, ok := a.GetServer().(*muxServer)
 	if !ok {
-		log.Errorf("Unknown endpoint type %T", a.GetEndpoint())
+		log.Errorf("Unknown endpoint type %T", a.GetServer())
 		return
 	}
 
@@ -138,25 +139,25 @@ func (m *perfMon) ObserveResponse(r request.Request, a request.Attempt) {
 	m.recordBucketMetrics(e.endpoint.GetUniqueId().String(), m.endpoints, a, e)
 }
 
-func (m *perfMon) deleteLocation(key backend.LocationKey) {
+func (m *perfMon) deleteFrontend(key engine.FrontendKey) {
 	m.deleteBucket(key.String(), m.locations)
 }
 
-func (m *perfMon) deleteEndpoint(key backend.EndpointKey) {
+func (m *perfMon) deleteServer(key engine.ServerKey) {
 	m.deleteBucket(key.String(), m.endpoints)
 }
 
-func (m *perfMon) deleteUpstream(up backend.UpstreamKey) {
+func (m *perfMon) deleteUpstream(up engine.UpstreamKey) {
 	m.deleteBucket(up.String(), m.upstreams)
 	for k, _ := range m.endpoints {
-		eKey := backend.MustParseEndpointKey(k)
+		eKey := engine.MustParseServerKey(k)
 		if eKey.UpstreamId == up.String() {
 			m.deleteBucket(eKey.String(), m.endpoints)
 		}
 	}
 }
 
-func (m *perfMon) recordBucketMetrics(id string, ms map[string]*metricsBucket, a request.Attempt, e *muxEndpoint) {
+func (m *perfMon) recordBucketMetrics(id string, ms map[string]*metricsBucket, a request.Attempt, e *muxServer) {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -181,11 +182,11 @@ func (m *perfMon) findBucket(id string, ms map[string]*metricsBucket) (*metricsB
 	return nil, fmt.Errorf("bucket %s not found", id)
 }
 
-func (m *perfMon) getBucket(id string, ms map[string]*metricsBucket, e *muxEndpoint) (*metricsBucket, error) {
+func (m *perfMon) getBucket(id string, ms map[string]*metricsBucket, e *muxServer) (*metricsBucket, error) {
 	if b, ok := ms[id]; ok {
 		return b, nil
 	}
-	mt, err := metrics.NewRoundTripMetrics(metrics.RoundTripOptions{TimeProvider: m.timeProvider})
+	mt, err := metrics.NewRoundTripMetrics(metrics.RoundTripOptions{TimeProvider: m.clock})
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +200,7 @@ func (m *perfMon) getBucket(id string, ms map[string]*metricsBucket, e *muxEndpo
 
 // metricBucket holds common metrics collected for every part that serves requests.
 type metricsBucket struct {
-	endpoint *muxEndpoint
+	endpoint *muxServer
 	metrics  *metrics.RoundTripMetrics
 }
 
@@ -212,12 +213,12 @@ func (m *metricsBucket) resetStats() error {
 	return nil
 }
 
-func (m *metricsBucket) getStats() (*backend.RoundTripStats, error) {
-	return backend.NewRoundTripStats(m.metrics)
+func (m *metricsBucket) getStats() (*engine.RoundTripStats, error) {
+	return engine.NewRoundTripStats(m.metrics)
 }
 
 type locSorter struct {
-	locs []*backend.Location
+	locs []*engine.Frontend
 }
 
 func (s *locSorter) Len() int {
@@ -233,7 +234,7 @@ func (s *locSorter) Less(i, j int) bool {
 }
 
 type endpointSorter struct {
-	es []*backend.Endpoint
+	es []*engine.Server
 }
 
 func (s *endpointSorter) Len() int {
@@ -248,7 +249,7 @@ func (s *endpointSorter) Less(i, j int) bool {
 	return cmpStats(&s.es[i].Stats, &s.es[j].Stats)
 }
 
-func cmpStats(s1, s2 *backend.RoundTripStats) bool {
+func cmpStats(s1, s2 *engine.RoundTripStats) bool {
 	// Items that have network errors go first
 	if s1.NetErrorRatio() != 0 || s2.NetErrorRatio() != 0 {
 		return s1.NetErrorRatio() > s2.NetErrorRatio()
