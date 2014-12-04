@@ -16,8 +16,8 @@ type Mem struct {
 	Hosts     map[engine.HostKey]engine.Host
 	Frontends map[engine.FrontendKey]engine.Frontend
 	Backends  map[engine.BackendKey]engine.Backend
+	Listeners map[engine.ListenerKey]engine.Listener
 
-	Listeners   map[engine.HostKey][]engine.Listener
 	Middlewares map[engine.FrontendKey][]engine.Middleware
 	Servers     map[engine.BackendKey][]engine.Server
 
@@ -32,7 +32,7 @@ func New(r *plugin.Registry) engine.Engine {
 		Frontends: map[engine.FrontendKey]engine.Frontend{},
 		Backends:  map[engine.BackendKey]engine.Backend{},
 
-		Listeners:   map[engine.HostKey][]engine.Listener{},
+		Listeners:   map[engine.ListenerKey]engine.Listener{},
 		Middlewares: map[engine.FrontendKey][]engine.Middleware{},
 		Servers:     map[engine.BackendKey][]engine.Server{},
 		Registry:    r,
@@ -86,61 +86,38 @@ func (m *Mem) DeleteHost(k engine.HostKey) error {
 	return nil
 }
 
-func (m *Mem) GetListeners(hk engine.HostKey) ([]engine.Listener, error) {
-	vals, ok := m.Listeners[hk]
-	if !ok {
-		return []engine.Listener{}, nil
+func (m *Mem) GetListeners() ([]engine.Listener, error) {
+	out := make([]engine.Listener, 0, len(m.Listeners))
+	for _, l := range m.Listeners {
+		out = append(out, l)
 	}
-	return vals, nil
+	return out, nil
 }
 
 func (m *Mem) GetListener(lk engine.ListenerKey) (*engine.Listener, error) {
-	vals, ok := m.Listeners[lk.HostKey]
+	val, ok := m.Listeners[lk]
 	if !ok {
 		return nil, &engine.NotFoundError{}
 	}
-	for _, v := range vals {
-		if v.Id == lk.Id {
-			return &v, nil
-		}
-	}
-	return nil, &engine.NotFoundError{}
+	return &val, nil
 }
 
-func (m *Mem) UpsertListener(hk engine.HostKey, l engine.Listener) error {
+func (m *Mem) UpsertListener(l engine.Listener) error {
 	defer func() {
-		m.emit(&engine.ListenerUpserted{HostKey: hk, Listener: l})
+		m.emit(&engine.ListenerUpserted{Listener: l})
 	}()
-	vals, ok := m.Listeners[hk]
-	if !ok {
-
-		m.Listeners[hk] = []engine.Listener{l}
-		return nil
-	}
-	for i, v := range vals {
-		if v.Id == l.Id {
-			vals[i] = l
-			return nil
-		}
-	}
-	vals = append(vals, l)
+	lk := engine.ListenerKey{l.Id}
+	m.Listeners[lk] = l
 	return nil
 }
 
 func (m *Mem) DeleteListener(lk engine.ListenerKey) error {
-	vals, ok := m.Listeners[lk.HostKey]
-	if !ok {
+	if _, ok := m.Listeners[lk]; !ok {
 		return &engine.NotFoundError{}
 	}
-	for i, v := range vals {
-		if v.Id == lk.Id {
-			vals = append(vals[:i], vals[i+1:]...)
-			m.emit(&engine.ListenerDeleted{ListenerKey: lk})
-			m.Listeners[lk.HostKey] = vals
-			return nil
-		}
-	}
-	return &engine.NotFoundError{}
+	delete(m.Listeners, lk)
+	m.emit(&engine.ListenerDeleted{ListenerKey: lk})
+	return nil
 }
 
 func (m *Mem) GetFrontends() ([]engine.Frontend, error) {

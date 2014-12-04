@@ -60,12 +60,11 @@ type Address struct {
 }
 
 type ListenerKey struct {
-	HostKey HostKey
-	Id      string
+	Id string
 }
 
 func (l ListenerKey) String() string {
-	return fmt.Sprintf("%s.%s", l.HostKey, l.Id)
+	return l.Id
 }
 
 // Listener specifies the listening point - the network and interface for each host. Host can have multiple interfaces.
@@ -238,7 +237,7 @@ func (l HTTPFrontendSettings) GetOptions() (*httploc.Options, error) {
 }
 
 func (f *Frontend) String() string {
-	return fmt.Sprintf("Frontend(%v, %v, %v, %v)", f.Type, f.Id, f.BackendId)
+	return fmt.Sprintf("Frontend(%v, %v, %v)", f.Type, f.Id, f.BackendId)
 }
 
 func (l *Frontend) GetId() string {

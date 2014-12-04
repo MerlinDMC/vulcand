@@ -15,9 +15,9 @@ type Engine interface {
 	UpsertHost(Host) error
 	DeleteHost(HostKey) error
 
-	GetListeners(HostKey) ([]Listener, error)
+	GetListeners() ([]Listener, error)
 	GetListener(ListenerKey) (*Listener, error)
-	UpsertListener(HostKey, Listener) error
+	UpsertListener(Listener) error
 	DeleteListener(ListenerKey) error
 
 	GetFrontends() ([]Frontend, error)

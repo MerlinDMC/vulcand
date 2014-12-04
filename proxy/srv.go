@@ -44,29 +44,36 @@ func (s *srv) String() string {
 	return fmt.Sprintf("%s->srv(%v, %v)", s.mux, s.state, s.listener)
 }
 
-func newSrv(m *mux, hk engine.HostKey, keyPair *engine.KeyPair, l *engine.Listener) (*srv, error) {
-	keyPairs := make(map[engine.HostKey]engine.KeyPair)
-	if keyPair != nil {
-		keyPairs[hk] = *keyPair
-	}
-
+func newSrv(m *mux, l engine.Listener) (*srv, error) {
 	proxy, err := vulcan.NewProxy(m.router)
 	if err != nil {
 		return nil, err
 	}
+
+	defaultHost := ""
+	keyPairs := make(map[engine.HostKey]engine.KeyPair)
+	for hk, h := range m.hosts {
+		if h.Options.KeyPair != nil {
+			keyPairs[hk] = *h.Options.KeyPair
+		}
+		if h.Options.Default {
+			defaultHost = hk.Name
+		}
+	}
+
 	return &srv{
 		mux:         m,
 		proxy:       proxy,
-		listener:    *l,
-		defaultHost: "",
+		listener:    l,
+		defaultHost: defaultHost,
 		keyPairs:    keyPairs,
 		state:       srvStateInit,
 	}, nil
 }
 
-func (s *srv) deleteKeyPair(hk engine.HostKey) (bool, error) {
+func (s *srv) deleteKeyPair(hk engine.HostKey) error {
 	delete(s.keyPairs, hk)
-	return false, s.reload()
+	return s.reload()
 }
 
 func (s *srv) isTLS() bool {
@@ -172,16 +179,6 @@ func (s *srv) shutdown() {
 	if s.srv != nil {
 		s.srv.Close()
 	}
-}
-
-func (s *srv) hasListener(hostname, listenerId string) bool {
-	l, exists := s.listeners[hostname]
-	return exists && l.Id == listenerId
-}
-
-func (s *srv) hasHost(hostname string) bool {
-	_, exists := s.listeners[hostname]
-	return exists
 }
 
 func newTLSConfig(keyPairs map[engine.HostKey]engine.KeyPair, defaultHost string) (*tls.Config, error) {

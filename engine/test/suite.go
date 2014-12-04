@@ -106,8 +106,6 @@ func (s *EngineSuite) HostUpsertKeyPair(c *C) {
 }
 
 func (s *EngineSuite) ListenerCRUD(c *C) {
-	host := engine.Host{Name: "localhost"}
-
 	listener := engine.Listener{
 		Id:       "l1",
 		Protocol: "http",
@@ -116,23 +114,19 @@ func (s *EngineSuite) ListenerCRUD(c *C) {
 			Address: "127.0.0.1:9000",
 		},
 	}
-
-	hk := engine.HostKey{Name: "localhost"}
-	c.Assert(s.Engine.UpsertHost(host), IsNil)
-	c.Assert(s.Engine.UpsertListener(hk, listener), IsNil)
-	lk := engine.ListenerKey{HostKey: hk, Id: listener.Id}
+	c.Assert(s.Engine.UpsertListener(listener), IsNil)
+	lk := engine.ListenerKey{Id: listener.Id}
 
 	out, err := s.Engine.GetListener(lk)
 	c.Assert(err, IsNil)
 	c.Assert(out, DeepEquals, &listener)
 
-	ls, err := s.Engine.GetListeners(hk)
+	ls, err := s.Engine.GetListeners()
 	c.Assert(err, IsNil)
 	c.Assert(ls, DeepEquals, []engine.Listener{listener})
 
 	s.expectChanges(c,
-		&engine.HostUpserted{Host: host},
-		&engine.ListenerUpserted{HostKey: hk, Listener: listener},
+		&engine.ListenerUpserted{Listener: listener},
 	)
 	c.Assert(s.Engine.DeleteListener(lk), IsNil)
 

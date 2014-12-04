@@ -21,18 +21,16 @@ type Proxy interface {
 	UpsertListener(engine.HostKey, engine.Listener) error
 	DeleteListener(engine.ListenerKey) error
 
+	UpsertBackend(engine.Backend) error
+	DeleteBackend(engine.BackendKey) error
+
 	UpsertFrontend(engine.Frontend, time.Duration) error
 	DeleteFrontend(engine.FrontendKey) error
 
 	UpsertMiddleware(engine.FrontendKey, engine.Middleware, time.Duration) error
 	DeleteMiddleware(engine.MiddlewareKey) error
 
-	UpsertBackend(engine.Backend) error
-	DeleteBackend(engine.BackendKey) error
-
-	GetServers(engine.BackendKey) ([]engine.Server, error)
-	GetServer(engine.ServerKey) (*engine.Server, error)
-	UpsertServer(engine.BackendKey, engine.Server, time.Duration) error
+	UpsertServer(engine.BackendKey, engine.Server) error
 	DeleteServer(engine.ServerKey) error
 
 	// TakeFiles takes file descriptors representing sockets in listening state to start serving on them

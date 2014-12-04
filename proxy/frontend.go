@@ -122,7 +122,7 @@ func (f *frontend) syncServers() error {
 	return nil
 }
 
-func (f *frontend) upsertMiddleware(fk engine.FrontendKey, mi *engine.Middleware) error {
+func (f *frontend) upsertMiddleware(fk engine.FrontendKey, mi engine.Middleware) error {
 	instance, err := mi.Middleware.NewMiddleware()
 	if err != nil {
 		return err

@@ -10,6 +10,7 @@ import (
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/metrics"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/timetools"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/location/httploc"
+	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/netutils"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/route/exproute"
 )
 
@@ -19,11 +20,13 @@ type mux struct {
 	id int
 
 	// Each listener address has a server associated with it
-	servers map[engine.Address]*srv
+	servers map[engine.ListenerKey]*srv
 
 	backends map[engine.BackendKey]*backend
 
 	frontends map[engine.FrontendKey]*frontend
+
+	hosts map[engine.HostKey]engine.Host
 
 	// Options hold parameters that are used to initialize http servers
 	options Options
@@ -54,14 +57,20 @@ func (m *mux) String() string {
 func New(id int, o Options) (*mux, error) {
 	o = setDefaults(o)
 	return &mux{
-		id:          id,
+		id:  id,
+		wg:  &sync.WaitGroup{},
+		mtx: &sync.RWMutex{},
+
+		options: o,
+
 		router:      exproute.NewExpRouter(),
-		servers:     make(map[engine.Address]*srv),
-		options:     o,
-		connTracker: newConnTracker(o.MetricsClient),
-		wg:          &sync.WaitGroup{},
-		mtx:         &sync.RWMutex{},
 		perfMon:     newPerfMon(o.TimeProvider),
+		connTracker: newConnTracker(o.MetricsClient),
+
+		servers:   make(map[engine.ListenerKey]*srv),
+		backends:  make(map[engine.BackendKey]*backend),
+		frontends: make(map[engine.FrontendKey]*frontend),
+		hosts:     make(map[engine.HostKey]engine.Host),
 	}, nil
 }
 
@@ -118,10 +127,10 @@ func (m *mux) TakeFiles(files []*FileDescriptor) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	for addr, srv := range m.servers {
-		file, exists := fMap[addr]
+	for _, srv := range m.servers {
+		file, exists := fMap[srv.listener.Address]
 		if !exists {
-			log.Infof("%s skipping take of files from address %s, has no passed files", m, addr)
+			log.Infof("%s skipping take of files from address %s, has no passed files", m, srv.listener.Address)
 			continue
 		}
 		if err := srv.takeFile(file); err != nil {
@@ -190,9 +199,11 @@ func (m *mux) UpsertHost(host engine.Host) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
+	m.hosts[engine.HostKey{Name: host.Name}] = host
+
 	for _, s := range m.servers {
-		if s.hasHost(host.Name) && s.isTLS() {
-			if err := s.updateHostKeyPair(host.Name, host.Options.KeyPair); err != nil {
+		if s.isTLS() {
+			if err := s.upsertKeyPair(engine.HostKey{Name: host.Name}, host.Options.KeyPair); err != nil {
 				return err
 			}
 		}
@@ -206,25 +217,29 @@ func (m *mux) DeleteHost(hk engine.HostKey) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
+	host, exists := m.hosts[hk]
+	if !exists {
+		return &engine.NotFoundError{Message: fmt.Sprintf("%v not found", hk)}
+	}
+
+	if host.Options.KeyPair == nil {
+		return nil
+	}
+
 	for _, s := range m.servers {
-		closed, err := s.deleteHost(hk.Name)
-		if err != nil {
+		if err := s.deleteKeyPair(hk); err != nil {
 			return err
-		}
-		if closed {
-			log.Infof("%s was closed", s)
-			delete(m.servers, s.listener.Address)
 		}
 	}
 	return nil
 }
 
-func (m *mux) UpsertListener(hk engine.HostKey, l engine.Listener) error {
-	log.Infof("%v UpsertListener(%v, %v)", m, hk, l)
+func (m *mux) UpsertListener(l engine.Listener) error {
+	log.Infof("%v UpsertListener(%v)", m, l)
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	return nil
+	return m.upsertListener(l)
 }
 
 func (m *mux) DeleteListener(lk engine.ListenerKey) error {
@@ -232,315 +247,207 @@ func (m *mux) DeleteListener(lk engine.ListenerKey) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
+	s, exists := m.servers[lk]
+	if !exists {
+		return &engine.NotFoundError{Message: fmt.Sprintf("%v not found", lk)}
+	}
+
+	delete(m.servers, lk)
+	s.shutdown()
 	return nil
 }
 
-func (m *mux) addHostListener(host *engine.Host, l *engine.Listener) error {
-	s, exists := m.servers[l.Address]
-	if !exists {
-		var err error
-		if s, err = newSrv(m, host, l); err != nil {
-			return err
-		}
-		m.servers[l.Address] = s
-		// If we are active, start the server immediatelly
-		if m.state == stateActive {
-			log.Infof("Mux is in active state, starting the HTTP server")
-			if err := s.start(); err != nil {
-				return err
-			}
+func (m *mux) upsertListener(l engine.Listener) error {
+	lk := engine.ListenerKey{Id: l.Id}
+	s, exists := m.servers[lk]
+	if exists {
+		// We can not listen for different protocols on the same socket
+		if s.listener.Protocol != l.Protocol {
+			return fmt.Errorf("conflicting protocol %s and %s", s.listener.Protocol, l.Protocol)
 		}
 		return nil
 	}
 
-	// We can not listen for different protocols on the same socket
-	if s.listener.Protocol != l.Protocol {
-		return fmt.Errorf("conflicting protocol %s and %s", s.listener.Protocol, l.Protocol)
-	}
-
-	return s.addHost(host, l)
-}
-
-func (m *mux) hasHostListener(hostname, listenerId string) bool {
-	for _, s := range m.servers {
-		if s.hasListener(hostname, listenerId) {
-			return true
+	// Check if there's a listener with the same address
+	for _, srv := range m.servers {
+		if srv.listener.Address == l.Address {
+			return &engine.AlreadyExistsError{Message: fmt.Sprintf("%v conflicts with existing %v", l, srv.listener)}
 		}
 	}
-	return false
-}
 
-/*
-func (m *mux) upsertHost(host engine.Host) error {
-	if m.options.DefaultListener != nil {
-		host.Listeners = append(host.Listeners, m.options.DefaultListener)
+	var err error
+	if s, err = newSrv(m, l); err != nil {
+		return err
 	}
-
-	for _, l := range host.Listeners {
-		if err := m.addHostListener(host, router, l); err != nil {
+	m.servers[lk] = s
+	// If we are active, start the server immediatelly
+	if m.state == stateActive {
+		log.Infof("Mux is in active state, starting the HTTP server")
+		if err := s.start(); err != nil {
 			return err
 		}
 	}
 	return nil
 }
-*/
 
-/*
 func (m *mux) UpsertBackend(b engine.Backend) error {
 	log.Infof("%v UpsertBackend(%v)", m, b)
 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	_, err := m.upsertBackend(u)
+	_, err := m.upsertBackend(b)
 	return err
 }
 
-func (m *mux) upsertUpstream(b *engine.Backend) (*upstream, error) {
-	up, ok := m.upstreams[u.GetUniqueId()]
+func (m *mux) upsertBackend(be engine.Backend) (*backend, error) {
+	bk := engine.BackendKey{Id: be.Id}
+	b, ok := m.backends[bk]
 	if ok {
-		return up, up.update(u)
+		return b, b.update(be)
 	}
-	up, err := newUpstream(m, u)
+	b, err := newBackend(m, be)
 	if err != nil {
 		return nil, err
 	}
-	m.upstreams[u.GetUniqueId()] = up
-	return up, nil
+	m.backends[bk] = b
+	return b, nil
 }
 
-func (m *mux) DeleteUpstream(upstreamId string) error {
-	log.Infof("%v DeleteUpstream(%s)", m, upstreamId)
+func (m *mux) DeleteBackend(bk engine.BackendKey) error {
+	log.Infof("%v DeleteBackend(%s)", m, bk)
 
-	up, ok := m.upstreams[engine.UpstreamKey{Id: upstreamId}]
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	b, ok := m.backends[bk]
 	if !ok {
-		return fmt.Errorf("Upstream(%v) not found", upstreamId)
+		return &engine.NotFoundError{Message: fmt.Sprintf("%v not found", bk)}
 	}
 
-	if len(up.locs) != 0 {
-		return fmt.Errorf("Upstream(%v) is used by locations: %v", upstreamId, up.locs)
+	if len(b.frontends) != 0 {
+		return fmt.Errorf("%v is used by frontends: %v", b, b.frontends)
 	}
 
-	up.Close()
-	m.perfMon.deleteUpstream(engine.UpstreamKey{Id: upstreamId})
+	b.Close()
+	m.perfMon.deleteBackend(bk)
 	return nil
 }
 
-
-func (m *mux) AddHostListener(h *engine.Host, l *engine.Listener) error {
-	log.Infof("%s AddHostLsitener %s %s", m, h, l)
-
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-
-	if err := m.upsertHost(h); err != nil {
-		return err
-	}
-	if m.hasHostListener(h.Name, l.Id) {
-		return nil
-	}
-	return m.addHostListener(h, m.hostRouters[h.Name], l)
-}
-
-func (m *mux) DeleteHostListener(host *engine.Host, listenerId string) error {
-	log.Infof("%s DeleteHostListener %s %s", m, host.Name, listenerId)
+func (m *mux) UpsertFrontend(f engine.Frontend) error {
+	log.Infof("%v UpsertFrontend(%v)", m, f)
 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	var err error
-	for k, s := range m.servers {
-		if s.hasListener(host.Name, listenerId) {
-			closed, e := s.deleteHost(host.Name)
-			if closed {
-				log.Infof("Closed server listening on %s", k)
-				delete(m.servers, k)
-			}
-			err = e
-		}
-	}
+	_, err := m.upsertFrontend(f)
 	return err
 }
 
-func (m *mux) UpsertLocation(host *engine.Host, loc *engine.Location) error {
-	log.Infof("%s UpsertLocation %s %s", m, host, loc)
-
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-
-	_, err := m.upsertLocation(host, loc)
-	return err
-}
-
-func (m *mux) UpsertLocationMiddleware(host *engine.Host, loc *engine.Location, mi *engine.MiddlewareInstance) error {
-	log.Infof("%s UpsertLocationMiddleware %s %s %s", m, host, loc, mi)
-
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-
-	return m.upsertLocationMiddleware(host, loc, mi)
-}
-
-func (m *mux) DeleteLocationMiddleware(host *engine.Host, loc *engine.Location, mType, mId string) error {
-	log.Infof("%s DeleteLocationMiddleware %s %s %s %s", m, host, loc, mType, mId)
-
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-
-	return m.deleteLocationMiddleware(host, loc, mType, mId)
-}
-
-func (m *mux) UpdateLocationUpstream(host *engine.Host, loc *engine.Location) error {
-	log.Infof("%s UpdateLocationUpstream %s %s", m, host, loc)
-
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-
-	_, err := m.upsertLocation(host, loc)
-	return err
-}
-
-func (m *mux) UpdateLocationPath(host *engine.Host, loc *engine.Location, path string) error {
-	log.Infof("%s UpdateLocationPath %s %s %s", m, host, loc, path)
-
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-
-	// If location already exists, delete it and re-create from scratch
-	if _, ok := m.locations[loc.GetUniqueId()]; ok {
-		if err := m.deleteLocation(host, loc.Id); err != nil {
-			return err
-		}
-	}
-	_, err := m.upsertLocation(host, loc)
-	return err
-}
-
-func (m *mux) UpdateLocationOptions(host *engine.Host, loc *engine.Location) error {
-	log.Infof("%s UpdateLocationOptions %s %s %s", m, host, loc, loc.Options)
-
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-
-	l, ok := m.locations[loc.GetUniqueId()]
+func (m *mux) upsertFrontend(fe engine.Frontend) (*frontend, error) {
+	bk := engine.BackendKey{Id: fe.BackendId}
+	b, ok := m.backends[bk]
 	if !ok {
-		return fmt.Errorf("%v not found", loc)
+		return nil, &engine.NotFoundError{Message: fmt.Sprintf("%v not found", bk)}
 	}
-
-	return l.updateOptions(loc)
-}
-
-func (m *mux) DeleteLocation(host *engine.Host, locationId string) error {
-	log.Infof("%s DeleteLocation %s %s", m, host, locationId)
-
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-
-	return m.deleteLocation(host, locationId)
-}
-
-func (m *mux) UpsertEndpoint(upstream *engine.Upstream, e *engine.Endpoint) error {
-	log.Infof("%s UpsertEndpoint %s %s", m, upstream, e)
-
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-
-	if _, err := netutils.ParseUrl(e.Url); err != nil {
-		return fmt.Errorf("failed to parse %v, error: %v", e, err)
-	}
-
-	up, ok := m.upstreams[upstream.GetUniqueId()]
-	if !ok {
-		return fmt.Errorf("%v not found", upstream)
-	}
-
-	return up.updateEndpoints(upstream.Endpoints)
-}
-
-func (m *mux) DeleteEndpoint(upstream *engine.Upstream, endpointId string) error {
-	log.Infof("%s DeleteEndpoint %s %s", m, upstream, endpointId)
-
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-
-	up, ok := m.upstreams[upstream.GetUniqueId()]
-	if !ok {
-		return fmt.Errorf("%v not found", upstream)
-	}
-
-	return up.updateEndpoints(upstream.Endpoints)
-}
-
-func (m *mux) getRouter(hostname string) *exproute.ExpRouter {
-	return m.hostRouters[hostname]
-}
-
-func (m *mux) getLocation(hostname string, locationId string) *httploc.HttpLocation {
-	l, ok := m.locations[engine.LocationKey{Hostname: hostname, Id: locationId}]
-	if !ok {
-		return nil
-	}
-	return l.hloc
-}
-
-func (m *mux) upsertLocation(host *engine.Host, loc *engine.Location) (*location, error) {
-	if err := m.upsertHost(host); err != nil {
-		return nil, err
-	}
-
-	up, err := m.upsertUpstream(loc.Upstream)
-	if err != nil {
-		return nil, err
-	}
-
-	l, ok := m.locations[loc.GetUniqueId()]
-	// If location already exists, update its upstream
+	fk := engine.FrontendKey{Id: fe.Id}
+	f, ok := m.frontends[fk]
 	if ok {
-		return l, l.updateUpstream(up)
+		return f, f.update(fe, b)
 	}
 
-	// create a new location
-	l, err = newLocation(m, loc, up)
+	f, err := newFrontend(m, fe, b)
 	if err != nil {
 		return nil, err
 	}
-	// register it with the locations registry
-	m.locations[loc.GetUniqueId()] = l
-	return l, nil
+
+	m.frontends[fk] = f
+	return f, nil
 }
 
-func (m *mux) upsertLocationMiddleware(host *engine.Host, loc *engine.Location, mi *engine.MiddlewareInstance) error {
-	l, err := m.upsertLocation(host, loc)
-	if err != nil {
+func (m *mux) DeleteFrontend(fk engine.FrontendKey) error {
+	log.Infof("%v DeleteFrontend(%v, %v)", m, fk)
+
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	return m.deleteFrontend(fk)
+}
+
+func (m *mux) deleteFrontend(fk engine.FrontendKey) error {
+	f, ok := m.frontends[fk]
+	if !ok {
+		return &engine.NotFoundError{Message: fmt.Sprintf("%v not found", fk)}
+	}
+	if err := f.remove(); err != nil {
 		return err
 	}
-	return l.upsertMiddleware(mi)
-}
-
-func (m *mux) deleteLocationMiddleware(host *engine.Host, loc *engine.Location, mType, mId string) error {
-	l, ok := m.locations[loc.GetUniqueId()]
-	if !ok {
-		return fmt.Errorf("%s not found", loc)
-	}
-	return l.deleteMiddleware(mType, mId)
-}
-
-
-
-func (m *mux) deleteLocation(host *engine.Host, locationId string) error {
-	key := engine.LocationKey{Hostname: host.Name, Id: locationId}
-	l, ok := m.locations[key]
-	if !ok {
-		return fmt.Errorf("%v not found")
-	}
-	if err := l.remove(); err != nil {
-		return err
-	}
-	delete(m.locations, key)
+	delete(m.frontends, fk)
 	return nil
 }
 
-*/
+func (m *mux) UpsertMiddleware(fk engine.FrontendKey, mi engine.Middleware) error {
+	log.Infof("%v UpsertMiddleware(%v, %f)", m, fk, mi)
+
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	return m.upsertMiddleware(fk, mi)
+}
+
+func (m *mux) upsertMiddleware(fk engine.FrontendKey, mi engine.Middleware) error {
+	f, ok := m.frontends[fk]
+	if !ok {
+		return &engine.NotFoundError{Message: fmt.Sprintf("%v not found", fk)}
+	}
+	return f.upsertMiddleware(fk, mi)
+}
+
+func (m *mux) DeleteMiddleware(mk engine.MiddlewareKey) error {
+	log.Infof("%v DeleteMiddleware(%v %v)", m, mk)
+
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	f, ok := m.frontends[mk.FrontendKey]
+	if !ok {
+		return &engine.NotFoundError{Message: fmt.Sprintf("%v not found", mk)}
+	}
+
+	return f.deleteMiddleware(mk)
+}
+
+func (m *mux) UpsertServer(bk engine.BackendKey, srv engine.Server) error {
+	log.Infof("%v UpsertServer(%v %v)", bk, srv)
+
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	if _, err := netutils.ParseUrl(srv.URL); err != nil {
+		return fmt.Errorf("failed to parse %v, error: %v", srv, err)
+	}
+
+	b, ok := m.backends[bk]
+	if !ok {
+		return &engine.NotFoundError{Message: fmt.Sprintf("%v not found", bk)}
+	}
+
+	return b.upsertServer(srv)
+}
+
+func (m *mux) DeleteServer(sk engine.ServerKey) error {
+	log.Infof("%v DeleteServer(%v %v)", sk)
+
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	b, ok := m.backends[sk.BackendKey]
+	if !ok {
+		return &engine.NotFoundError{Message: fmt.Sprintf("%v not found", sk.BackendKey)}
+	}
+
+	return b.deleteServer(sk)
+}
 
 func (m *mux) getTransportOptions(b engine.Backend) (*httploc.TransportOptions, error) {
 	o, err := b.GetTransportOptions()

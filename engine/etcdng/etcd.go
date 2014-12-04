@@ -85,7 +85,7 @@ func (n *ng) GetHosts() ([]engine.Host, error) {
 }
 
 func (n *ng) GetHost(key engine.HostKey) (*engine.Host, error) {
-	hostKey := n.path("hosts", key.Name, "host")
+	hostKey := n.path("hosts", key.Name, "settings")
 
 	var host *host
 	err := n.getJSONVal(hostKey, &host)
@@ -100,11 +100,11 @@ func (n *ng) GetHost(key engine.HostKey) (*engine.Host, error) {
 		}
 	}
 
-	return engine.NewHost(host.Name, engine.HostOptions{Default: host.Options.Default, KeyPair: keyPair})
+	return engine.NewHost(key.Name, engine.HostOptions{Default: host.Options.Default, KeyPair: keyPair})
 }
 
 func (n *ng) UpsertHost(h engine.Host) error {
-	hostKey := n.path("hosts", h.Name, "host")
+	hostKey := n.path("hosts", h.Name, "settings")
 
 	val := host{
 		Name: h.Name,
@@ -128,14 +128,14 @@ func (n *ng) DeleteHost(key engine.HostKey) error {
 	return n.deleteKey(n.path("hosts", key.Name))
 }
 
-func (n *ng) GetListeners(key engine.HostKey) ([]engine.Listener, error) {
+func (n *ng) GetListeners() ([]engine.Listener, error) {
 	ls := []engine.Listener{}
-	vals, err := n.getVals(n.etcdKey, "hosts", key.Name, "listeners")
+	vals, err := n.getVals(n.etcdKey, "listeners")
 	if err != nil {
 		return nil, err
 	}
 	for _, p := range vals {
-		l, err := n.GetListener(engine.ListenerKey{HostKey: key, Id: suffix(p.Key)})
+		l, err := n.GetListener(engine.ListenerKey{Id: suffix(p.Key)})
 		if err != nil {
 			return nil, err
 		}
@@ -145,26 +145,26 @@ func (n *ng) GetListeners(key engine.HostKey) ([]engine.Listener, error) {
 }
 
 func (n *ng) GetListener(key engine.ListenerKey) (*engine.Listener, error) {
-	bytes, err := n.getVal(n.path("hosts", key.HostKey.Name, "listeners", key.Id))
+	bytes, err := n.getVal(n.path("listeners", key.Id))
 	if err != nil {
 		return nil, err
 	}
 	return engine.ListenerFromJSON([]byte(bytes))
 }
 
-func (n *ng) UpsertListener(key engine.HostKey, listener engine.Listener) error {
-	return n.setJSONVal(n.path("hosts", key.Name, "listeners", listener.Id), listener, noTTL)
+func (n *ng) UpsertListener(listener engine.Listener) error {
+	return n.setJSONVal(n.path("listeners", listener.Id), listener, noTTL)
 }
 
 func (s *ng) DeleteListener(key engine.ListenerKey) error {
-	return s.deleteKey(s.path("hosts", key.HostKey.Name, "listeners", key.Id))
+	return s.deleteKey(s.path("listeners", key.Id))
 }
 
 func (n *ng) UpsertFrontend(f engine.Frontend, ttl time.Duration) error {
 	if _, err := n.GetBackend(engine.BackendKey{Id: f.BackendId}); err != nil {
 		return err
 	}
-	if err := n.setJSONVal(n.path("frontends", f.Id, "frontend"), f, noTTL); err != nil {
+	if err := n.setJSONVal(n.path("frontends", f.Id, "settings"), f, noTTL); err != nil {
 		return err
 	}
 	if ttl == 0 {
@@ -191,7 +191,7 @@ func (n *ng) GetFrontends() ([]engine.Frontend, error) {
 }
 
 func (n *ng) GetFrontend(key engine.FrontendKey) (*engine.Frontend, error) {
-	frontendKey := n.path("frontends", key.Id, "frontend")
+	frontendKey := n.path("frontends", key.Id, "settings")
 
 	bytes, err := n.getVal(frontendKey)
 	if err != nil {
@@ -221,7 +221,7 @@ func (n *ng) GetBackends() ([]engine.Backend, error) {
 }
 
 func (n *ng) GetBackend(key engine.BackendKey) (*engine.Backend, error) {
-	backendKey := n.path("backends", key.Id, "backend")
+	backendKey := n.path("backends", key.Id, "settings")
 
 	bytes, err := n.getVal(backendKey)
 	if err != nil {
@@ -231,7 +231,7 @@ func (n *ng) GetBackend(key engine.BackendKey) (*engine.Backend, error) {
 }
 
 func (n *ng) UpsertBackend(b engine.Backend) error {
-	return n.setJSONVal(n.path("backends", b.Id, "backend"), b, noTTL)
+	return n.setJSONVal(n.path("backends", b.Id, "settings"), b, noTTL)
 }
 
 func (n *ng) DeleteBackend(bk engine.BackendKey) error {
@@ -405,12 +405,15 @@ func (s *ng) parseChange(response *etcd.Response) (interface{}, error) {
 	matchers := []MatcherFn{
 		// Host updates
 		s.parseHostChange,
-		s.parseHostListenerChange,
+
+		// Listener updates
+		s.parseListenerChange,
 
 		// Frontend updates
 		s.parseFrontendChange,
 		s.parseFrontendMiddlewareChange,
 
+		// Backend updates
 		s.parseBackendChange,
 		s.parseBackendServerChange,
 	}
@@ -424,7 +427,7 @@ func (s *ng) parseChange(response *etcd.Response) (interface{}, error) {
 }
 
 func (n *ng) parseHostChange(r *etcd.Response) (interface{}, error) {
-	out := regexp.MustCompile("/hosts/([^/]+)(?:/host)?$").FindStringSubmatch(r.Node.Key)
+	out := regexp.MustCompile("/hosts/([^/]+)(?:/settings)?$").FindStringSubmatch(r.Node.Key)
 	if len(out) != 2 {
 		return nil, nil
 	}
@@ -448,13 +451,13 @@ func (n *ng) parseHostChange(r *etcd.Response) (interface{}, error) {
 	return nil, fmt.Errorf("unsupported action for host: %s", r.Action)
 }
 
-func (n *ng) parseHostListenerChange(r *etcd.Response) (interface{}, error) {
-	out := regexp.MustCompile("/hosts/([^/]+)/listeners/([^/]+)").FindStringSubmatch(r.Node.Key)
-	if len(out) != 3 {
+func (n *ng) parseListenerChange(r *etcd.Response) (interface{}, error) {
+	out := regexp.MustCompile("/listeners/([^/]+)").FindStringSubmatch(r.Node.Key)
+	if len(out) != 2 {
 		return nil, nil
 	}
 
-	key := engine.ListenerKey{Id: out[2], HostKey: engine.HostKey{Name: out[1]}}
+	key := engine.ListenerKey{Id: out[1]}
 
 	switch r.Action {
 	case createA, setA:
@@ -463,7 +466,6 @@ func (n *ng) parseHostListenerChange(r *etcd.Response) (interface{}, error) {
 			return nil, err
 		}
 		return &engine.ListenerUpserted{
-			HostKey:  key.HostKey,
 			Listener: *l,
 		}, nil
 	case deleteA, expireA:
@@ -475,7 +477,7 @@ func (n *ng) parseHostListenerChange(r *etcd.Response) (interface{}, error) {
 }
 
 func (n *ng) parseFrontendChange(r *etcd.Response) (interface{}, error) {
-	out := regexp.MustCompile("/frontends/([^/]+)(?:/frontend)?$").FindStringSubmatch(r.Node.Key)
+	out := regexp.MustCompile("/frontends/([^/]+)(?:/settings)?$").FindStringSubmatch(r.Node.Key)
 	if len(out) != 2 {
 		return nil, nil
 	}
@@ -527,7 +529,7 @@ func (s *ng) parseFrontendMiddlewareChange(r *etcd.Response) (interface{}, error
 }
 
 func (n *ng) parseBackendChange(r *etcd.Response) (interface{}, error) {
-	out := regexp.MustCompile("/backends/([^/]+)(?:/backend)?$").FindStringSubmatch(r.Node.Key)
+	out := regexp.MustCompile("/backends/([^/]+)(?:/settings)?$").FindStringSubmatch(r.Node.Key)
 	if len(out) != 2 {
 		return nil, nil
 	}
