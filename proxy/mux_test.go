@@ -2,14 +2,15 @@ package proxy
 
 import (
 	"net/http"
-	"time"
+	//	"time"
 
-	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/limit/tokenbucket"
+	//	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/limit/tokenbucket"
+	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/log"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/loadbalance/roundrobin"
 
 	. "github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/testutils"
 	. "github.com/mailgun/vulcand/Godeps/_workspace/src/gopkg.in/check.v1"
-	. "github.com/mailgun/vulcand/backend"
+	"github.com/mailgun/vulcand/engine"
 	. "github.com/mailgun/vulcand/testutils"
 	"testing"
 )
@@ -23,6 +24,10 @@ type ServerSuite struct {
 	lastId int
 }
 
+func (s *ServerSuite) SetUpSuite(c *C) {
+	log.Init([]*log.LogConfig{&log.LogConfig{Name: "console"}})
+}
+
 func (s *ServerSuite) SetUpTest(c *C) {
 	m, err := New(s.lastId, Options{})
 	c.Assert(err, IsNil)
@@ -32,27 +37,49 @@ func (s *ServerSuite) SetUpTest(c *C) {
 func (s *ServerSuite) TearDownTest(c *C) {
 	s.mux.Stop(true)
 }
-
 func (s *ServerSuite) TestStartStop(c *C) {
 	c.Assert(s.mux.Start(), IsNil)
 }
 
+func (s *ServerSuite) TestBackendCRUD(c *C) {
+	e := NewTestResponder("Hi, I'm endpoint")
+	defer e.Close()
+
+	b := MakeBatch(Batch{Addr: "localhost:11300", Route: `Path("/")`, URL: e.URL})
+
+	c.Assert(s.mux.UpsertBackend(b.B), IsNil)
+	c.Assert(s.mux.UpsertServer(b.BK, b.S), IsNil)
+	c.Assert(s.mux.UpsertFrontend(b.F), IsNil)
+	c.Assert(s.mux.UpsertListener(b.L), IsNil)
+
+	c.Assert(s.mux.Start(), IsNil)
+
+	c.Assert(GETResponse(c, b.FrontendURL("/"), Opts{}), Equals, "Hi, I'm endpoint")
+
+	c.Assert(s.mux.DeleteListener(b.LK), IsNil)
+
+	_, _, err := GET(b.FrontendURL("/"), Opts{})
+	c.Assert(err, NotNil)
+}
+
+// Here we upsert only server that creates backend with default settings
 func (s *ServerSuite) TestServerCRUD(c *C) {
 	e := NewTestResponder("Hi, I'm endpoint")
 	defer e.Close()
 
-	l, h := MakeLocation(LocOpts{Hostname: "localhost", Addr: "localhost:31000", URL: e.URL})
+	b := MakeBatch(Batch{Addr: "localhost:11300", Route: `Path("/")`, URL: e.URL})
 
-	c.Assert(s.mux.UpsertHost(h), IsNil)
-	c.Assert(s.mux.UpsertLocation(h, l), IsNil)
+	c.Assert(s.mux.UpsertServer(b.BK, b.S), IsNil)
+	c.Assert(s.mux.UpsertFrontend(b.F), IsNil)
+	c.Assert(s.mux.UpsertListener(b.L), IsNil)
 
 	c.Assert(s.mux.Start(), IsNil)
 
-	c.Assert(GETResponse(c, MakeURL(l, h.Listeners[0]), Opts{}), Equals, "Hi, I'm endpoint")
+	c.Assert(GETResponse(c, b.FrontendURL("/"), Opts{}), Equals, "Hi, I'm endpoint")
 
-	c.Assert(s.mux.DeleteHost(h.Name), IsNil)
+	c.Assert(s.mux.DeleteListener(b.LK), IsNil)
 
-	_, _, err := GET(MakeURL(l, h.Listeners[0]), Opts{})
+	_, _, err := GET(b.FrontendURL("/"), Opts{})
 	c.Assert(err, NotNil)
 }
 
@@ -60,21 +87,19 @@ func (s *ServerSuite) TestServerDefaultListener(c *C) {
 	e := NewTestResponder("Hi, I'm endpoint")
 	defer e.Close()
 
-	defaultListener := &Listener{Protocol: HTTP, Address: Address{"tcp", "localhost:41000"}}
+	b := MakeBatch(Batch{Addr: "localhost:41000", Route: `Path("/")`, URL: e.URL})
 
-	m, err := New(s.lastId, Options{DefaultListener: defaultListener})
+	m, err := New(s.lastId, Options{DefaultListener: &b.L})
 	defer m.Stop(true)
 	c.Assert(err, IsNil)
 	s.mux = m
 
-	l, h := MakeLocation(LocOpts{Hostname: "localhost", Addr: "localhost:31000", URL: e.URL})
-
-	h.Listeners = []*Listener{}
-	c.Assert(s.mux.UpsertLocation(h, l), IsNil)
+	c.Assert(s.mux.UpsertServer(b.BK, b.S), IsNil)
+	c.Assert(s.mux.UpsertFrontend(b.F), IsNil)
 
 	c.Assert(s.mux.Start(), IsNil)
-	c.Assert(GETResponse(c, MakeURL(l, defaultListener), Opts{}), Equals, "Hi, I'm endpoint")
 
+	c.Assert(GETResponse(c, b.FrontendURL("/"), Opts{}), Equals, "Hi, I'm endpoint")
 }
 
 // Test case when you have two hosts on the same socket
@@ -87,16 +112,22 @@ func (s *ServerSuite) TestTwoHosts(c *C) {
 
 	c.Assert(s.mux.Start(), IsNil)
 
-	l, h := MakeLocation(LocOpts{Hostname: "localhost", Addr: "localhost:31000", URL: e.URL})
-	c.Assert(s.mux.UpsertLocation(h, l), IsNil)
+	b := MakeBatch(Batch{Addr: "localhost:41000", Route: `Host("localhost") && Path("/")`, URL: e.URL})
+	b2 := MakeBatch(Batch{Addr: "localhost:41000", Route: `Host("otherhost") && Path("/")`, URL: e2.URL})
 
-	l2, h2 := MakeLocation(LocOpts{Hostname: "otherhost", Addr: "localhost:31000", URL: e2.URL})
-	c.Assert(s.mux.UpsertLocation(h2, l2), IsNil)
+	c.Assert(s.mux.UpsertServer(b.BK, b.S), IsNil)
+	c.Assert(s.mux.UpsertServer(b2.BK, b2.S), IsNil)
 
-	c.Assert(GETResponse(c, MakeURL(l, h.Listeners[0]), Opts{}), Equals, "Hi, I'm endpoint 1")
-	c.Assert(GETResponse(c, MakeURL(l2, h2.Listeners[0]), Opts{Host: "otherhost"}), Equals, "Hi, I'm endpoint 2")
+	c.Assert(s.mux.UpsertFrontend(b.F), IsNil)
+	c.Assert(s.mux.UpsertFrontend(b2.F), IsNil)
+
+	c.Assert(s.mux.UpsertListener(b.L), IsNil)
+
+	c.Assert(GETResponse(c, b.FrontendURL("/"), Opts{Host: "localhost"}), Equals, "Hi, I'm endpoint 1")
+	c.Assert(GETResponse(c, b.FrontendURL("/"), Opts{Host: "otherhost"}), Equals, "Hi, I'm endpoint 2")
 }
 
+/*
 func (s *ServerSuite) TestServerListenerCRUD(c *C) {
 	e := NewTestResponder("Hi, I'm endpoint")
 	defer e.Close()
@@ -776,10 +807,11 @@ func (s *ServerSuite) TestTakeFiles(c *C) {
 
 	c.Assert(GETResponse(c, MakeURL(l2, h2.Listeners[0]), Opts{}), Equals, "Hi, I'm endpoint 2")
 }
+*/
 
-func AssertSameEndpoints(c *C, we []*roundrobin.WeightedEndpoint, e []*Endpoint) {
-	if !EndpointsEq(we, e) {
-		c.Fatalf("Expected endpoints sets to be the same %v and %v", we, e)
+func AssertSameServers(c *C, we []*roundrobin.WeightedEndpoint, s []engine.Server) {
+	if !ServersEq(we, s) {
+		c.Fatalf("Expected servers sets to be the same %v and %v", we, s)
 	}
 }
 

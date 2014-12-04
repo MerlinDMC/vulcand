@@ -41,7 +41,7 @@ func (s *srv) GetFile() (*FileDescriptor, error) {
 }
 
 func (s *srv) String() string {
-	return fmt.Sprintf("%s->srv(%v, %v)", s.mux, s.state, s.listener)
+	return fmt.Sprintf("%s->srv(%v, %v)", s.mux, s.state, &s.listener)
 }
 
 func newSrv(m *mux, l engine.Listener) (*srv, error) {
@@ -258,7 +258,7 @@ func (s *srv) serve(srv *manners.GracefulServer) {
 
 	srv.ListenAndServe()
 
-	log.Infof("Stop %s", s.listener.String())
+	log.Infof("%v stop", s)
 }
 
 type srvState int

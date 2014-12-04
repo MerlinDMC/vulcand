@@ -5,25 +5,122 @@ import (
 	"sync/atomic"
 
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/loadbalance/roundrobin"
-	"github.com/mailgun/vulcand/backend"
-	"github.com/mailgun/vulcand/plugin/ratelimit"
+	"github.com/mailgun/vulcand/engine"
+	//	"github.com/mailgun/vulcand/plugin/ratelimit"
 )
 
 var lastId int64
 
-type LocOpts struct {
-	UpId     string
-	Hostname string
-	Addr     string
-	URL      string
-	LocId    string
-}
-
-func nextId(prefix string) string {
+func UID(prefix string) string {
 	return fmt.Sprintf("%s%d", prefix, atomic.AddInt64(&lastId, 1))
 }
 
-func MakeLocation(o LocOpts) (*backend.Location, *backend.Host) {
+type Batch struct {
+	Route string
+	Addr  string
+	URL   string
+}
+
+type BatchVal struct {
+	L  engine.Listener
+	LK engine.ListenerKey
+
+	F  engine.Frontend
+	FK engine.FrontendKey
+
+	B  engine.Backend
+	BK engine.BackendKey
+
+	S  engine.Server
+	SK engine.ServerKey
+}
+
+func MakeURL(l engine.Listener, path string) string {
+	return fmt.Sprintf("%s://%s%s", l.Protocol, l.Address.Address, path)
+}
+
+func (b BatchVal) FrontendURL(path string) string {
+	return MakeURL(b.L, path)
+}
+
+func MakeBatch(b Batch) BatchVal {
+	bk := MakeBackend()
+	l := MakeListener(b.Addr)
+	f := MakeFrontend(b.Route, bk.Id)
+	s := MakeServer(b.URL)
+	return BatchVal{
+		L:  l,
+		LK: engine.ListenerKey{Id: l.Id},
+
+		F:  f,
+		FK: engine.FrontendKey{Id: f.Id},
+
+		B:  bk,
+		BK: engine.BackendKey{Id: bk.Id},
+
+		S:  s,
+		SK: engine.ServerKey{BackendKey: engine.BackendKey{Id: bk.Id}, Id: s.Id},
+	}
+}
+
+func MakeListener(addr string) engine.Listener {
+	l, err := engine.NewListener(UID("listener"), engine.HTTP, engine.TCP, addr)
+	if err != nil {
+		panic(err)
+	}
+	return *l
+}
+
+func MakeFrontend(route string, backendId string) engine.Frontend {
+	f, err := engine.NewHTTPFrontend(UID("frontend"), backendId, engine.HTTPFrontendSettings{Route: route})
+	if err != nil {
+		panic(err)
+	}
+	return *f
+}
+
+func MakeBackend() engine.Backend {
+	b, err := engine.NewHTTPBackend(UID("backend"), engine.HTTPBackendSettings{})
+	if err != nil {
+		panic(err)
+	}
+	return *b
+}
+
+func MakeServer(url string) engine.Server {
+	s, err := engine.NewServer(UID("server"), url)
+	if err != nil {
+		panic(err)
+	}
+	return *s
+}
+
+/*
+
+func MakeRateLimit(id string, rate int64, variable string, burst int64, periodSeconds int64, loc *backend.Location) *backend.MiddlewareInstance {
+	rl, err := ratelimit.FromOther(ratelimit.RateLimit{
+		PeriodSeconds: periodSeconds,
+		Requests:      rate,
+		Burst:         burst,
+		Variable:      variable})
+	if err != nil {
+		panic(err)
+	}
+	return &backend.MiddlewareInstance{
+		Type:       "ratelimit",
+		Id:         id,
+		Middleware: rl,
+	}
+}
+
+type FrontendOpts struct {
+	BackendId string
+	Addr      string
+	URL       string
+	LocId     string
+}
+
+func MakeFrontend(o FrontendOpts) engine.Frontend {
 	o = setDefaults(o)
 	host := &backend.Host{
 		Name: o.Hostname,
@@ -63,34 +160,22 @@ func setDefaults(o LocOpts) LocOpts {
 	return o
 }
 
-func MakeRateLimit(id string, rate int64, variable string, burst int64, periodSeconds int64, loc *backend.Location) *backend.MiddlewareInstance {
-	rl, err := ratelimit.FromOther(ratelimit.RateLimit{
-		PeriodSeconds: periodSeconds,
-		Requests: rate,
-		Burst: burst,
-		Variable: variable})
-	if err != nil {
-		panic(err)
-	}
-	return &backend.MiddlewareInstance{
-		Type:       "ratelimit",
-		Id:         id,
-		Middleware: rl,
-	}
-}
+
 
 func MakeURL(loc *backend.Location, l *backend.Listener) string {
 	return fmt.Sprintf("%s://%s%s", l.Protocol, l.Address.Address, loc.Path)
 }
 
-func EndpointsEq(a []*roundrobin.WeightedEndpoint, b []*backend.Endpoint) bool {
+*/
+
+func ServersEq(a []*roundrobin.WeightedEndpoint, b []engine.Server) bool {
 	x, y := map[string]bool{}, map[string]bool{}
 	for _, e := range a {
 		x[e.GetUrl().String()] = true
 	}
 
 	for _, e := range b {
-		y[e.Url] = true
+		y[e.URL] = true
 	}
 
 	if len(x) != len(y) {
@@ -106,8 +191,8 @@ func EndpointsEq(a []*roundrobin.WeightedEndpoint, b []*backend.Endpoint) bool {
 	return true
 }
 
-func NewTestKeyPair() *backend.KeyPair {
-	return &backend.KeyPair{
+func NewTestKeyPair() *engine.KeyPair {
+	return &engine.KeyPair{
 		Key:  LocalhostKey,
 		Cert: LocalhostCert,
 	}

@@ -151,6 +151,12 @@ func (m *mux) Start() error {
 		return fmt.Errorf("%s can start only from init state, got %d", m, m.state)
 	}
 
+	if m.options.DefaultListener != nil {
+		if err := m.upsertListener(*m.options.DefaultListener); err != nil {
+			return err
+		}
+	}
+
 	m.state = stateActive
 	for _, s := range m.servers {
 		if err := s.start(); err != nil {
@@ -194,7 +200,7 @@ func (m *mux) stopServers() {
 }
 
 func (m *mux) UpsertHost(host engine.Host) error {
-	log.Infof("%s UpsertHost(%s)", m, host)
+	log.Infof("%s UpsertHost %s", m, &host)
 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -212,7 +218,7 @@ func (m *mux) UpsertHost(host engine.Host) error {
 }
 
 func (m *mux) DeleteHost(hk engine.HostKey) error {
-	log.Infof("%s DeleteHost %v", m, hk)
+	log.Infof("%s DeleteHost %v", m, &hk)
 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -235,7 +241,7 @@ func (m *mux) DeleteHost(hk engine.HostKey) error {
 }
 
 func (m *mux) UpsertListener(l engine.Listener) error {
-	log.Infof("%v UpsertListener(%v)", m, l)
+	log.Infof("%v UpsertListener %v", m, &l)
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -243,7 +249,7 @@ func (m *mux) UpsertListener(l engine.Listener) error {
 }
 
 func (m *mux) DeleteListener(lk engine.ListenerKey) error {
-	log.Infof("%v DeleteListener(%v)", m, lk)
+	log.Infof("%v DeleteListener %v", m, &lk)
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -291,7 +297,7 @@ func (m *mux) upsertListener(l engine.Listener) error {
 }
 
 func (m *mux) UpsertBackend(b engine.Backend) error {
-	log.Infof("%v UpsertBackend(%v)", m, b)
+	log.Infof("%v UpsertBackend %v", m, &b)
 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -315,7 +321,7 @@ func (m *mux) upsertBackend(be engine.Backend) (*backend, error) {
 }
 
 func (m *mux) DeleteBackend(bk engine.BackendKey) error {
-	log.Infof("%v DeleteBackend(%s)", m, bk)
+	log.Infof("%v DeleteBackend %s", m, &bk)
 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -335,7 +341,7 @@ func (m *mux) DeleteBackend(bk engine.BackendKey) error {
 }
 
 func (m *mux) UpsertFrontend(f engine.Frontend) error {
-	log.Infof("%v UpsertFrontend(%v)", m, f)
+	log.Infof("%v UpsertFrontend %v", m, &f)
 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -366,7 +372,7 @@ func (m *mux) upsertFrontend(fe engine.Frontend) (*frontend, error) {
 }
 
 func (m *mux) DeleteFrontend(fk engine.FrontendKey) error {
-	log.Infof("%v DeleteFrontend(%v, %v)", m, fk)
+	log.Infof("%v DeleteFrontend %v, %v", m, &fk)
 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -387,7 +393,7 @@ func (m *mux) deleteFrontend(fk engine.FrontendKey) error {
 }
 
 func (m *mux) UpsertMiddleware(fk engine.FrontendKey, mi engine.Middleware) error {
-	log.Infof("%v UpsertMiddleware(%v, %f)", m, fk, mi)
+	log.Infof("%v UpsertMiddleware %v, %v", m, &fk, &mi)
 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -404,7 +410,7 @@ func (m *mux) upsertMiddleware(fk engine.FrontendKey, mi engine.Middleware) erro
 }
 
 func (m *mux) DeleteMiddleware(mk engine.MiddlewareKey) error {
-	log.Infof("%v DeleteMiddleware(%v %v)", m, mk)
+	log.Infof("%v DeleteMiddleware(%v %v)", m, &mk)
 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -418,7 +424,7 @@ func (m *mux) DeleteMiddleware(mk engine.MiddlewareKey) error {
 }
 
 func (m *mux) UpsertServer(bk engine.BackendKey, srv engine.Server) error {
-	log.Infof("%v UpsertServer(%v %v)", bk, srv)
+	log.Infof("%v UpsertServer %v %v", m, &bk, &srv)
 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -429,14 +435,17 @@ func (m *mux) UpsertServer(bk engine.BackendKey, srv engine.Server) error {
 
 	b, ok := m.backends[bk]
 	if !ok {
-		return &engine.NotFoundError{Message: fmt.Sprintf("%v not found", bk)}
+		var err error
+		if b, err = m.upsertBackend(engine.Backend{Id: bk.Id, Type: engine.HTTP, Settings: engine.HTTPBackendSettings{}}); err != nil {
+			return err
+		}
 	}
 
 	return b.upsertServer(srv)
 }
 
 func (m *mux) DeleteServer(sk engine.ServerKey) error {
-	log.Infof("%v DeleteServer(%v %v)", sk)
+	log.Infof("%v DeleteServer %v", m, &sk)
 
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
