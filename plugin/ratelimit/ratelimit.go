@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/timetools"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/codegangsta/cli"
+	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/timetools"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/limit"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/limit/tokenbucket"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/middleware"
@@ -89,8 +89,9 @@ type RateLimit struct {
 // Returns vulcan library compatible middleware
 func (r *RateLimit) NewMiddleware() (middleware.Middleware, error) {
 	defaultRates := tokenbucket.NewRateSet()
-	defaultRates.Add(time.Duration(r.PeriodSeconds)*time.Second, r.Requests, r.Burst)
-
+	if err := defaultRates.Add(time.Duration(r.PeriodSeconds)*time.Second, r.Requests, r.Burst); err != nil {
+		return nil, err
+	}
 	return tokenbucket.NewLimiter(defaultRates, 0, r.mapper, r.configMapper, r.clock)
 }
 
