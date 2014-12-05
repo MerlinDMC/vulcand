@@ -128,6 +128,7 @@ func (m *mux) TakeFiles(files []*FileDescriptor) error {
 	defer m.mtx.Unlock()
 
 	for _, srv := range m.servers {
+
 		file, exists := fMap[srv.listener.Address]
 		if !exists {
 			log.Infof("%s skipping take of files from address %s, has no passed files", m, srv.listener.Address)

@@ -18,16 +18,16 @@ type Proxy interface {
 	UpsertHost(engine.Host) error
 	DeleteHost(engine.HostKey) error
 
-	UpsertListener(engine.HostKey, engine.Listener) error
+	UpsertListener(engine.Listener) error
 	DeleteListener(engine.ListenerKey) error
 
 	UpsertBackend(engine.Backend) error
 	DeleteBackend(engine.BackendKey) error
 
-	UpsertFrontend(engine.Frontend, time.Duration) error
+	UpsertFrontend(engine.Frontend) error
 	DeleteFrontend(engine.FrontendKey) error
 
-	UpsertMiddleware(engine.FrontendKey, engine.Middleware, time.Duration) error
+	UpsertMiddleware(engine.FrontendKey, engine.Middleware) error
 	DeleteMiddleware(engine.MiddlewareKey) error
 
 	UpsertServer(engine.BackendKey, engine.Server) error
@@ -57,7 +57,7 @@ type Options struct {
 	TimeProvider    timetools.TimeProvider
 }
 
-type NewproxyFn func(id int) (Proxy, error)
+type NewProxyFn func(id int) (Proxy, error)
 
 type FileDescriptor struct {
 	Address engine.Address

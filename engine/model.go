@@ -25,11 +25,11 @@ type StatsProvider interface {
 
 	// TopFrontends returns locations sorted by criteria (faulty, slow, most used)
 	// if hostname or backendId is present, will filter out locations for that host or backendId
-	TopFrontends(*BackendKey) ([]*Frontend, error)
+	TopFrontends(*BackendKey) ([]Frontend, error)
 
 	// TopServers returns endpoints sorted by criteria (faulty, slow, mos used)
 	// if backendId is not empty, will filter out endpoints for that backendId
-	TopServers(*BackendKey) ([]*Server, error)
+	TopServers(*BackendKey) ([]Server, error)
 }
 
 type KeyPair struct {
@@ -597,4 +597,5 @@ const (
 	HTTPS = "https"
 	TCP   = "tcp"
 	UNIX  = "unix"
+	NoTTL = 0
 )

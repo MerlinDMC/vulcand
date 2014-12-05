@@ -315,9 +315,11 @@ func (m *Mem) Subscribe(changes chan interface{}, cancelC chan bool) error {
 			select {
 			case changes <- change:
 			case err := <-m.ErrorsC:
+				log.Infof("Returning error: %v", err)
 				return err
 			}
 		case err := <-m.ErrorsC:
+			log.Infof("Returning error: %v", err)
 			return err
 		}
 	}
