@@ -7,8 +7,28 @@ import (
 	"github.com/mailgun/vulcand/plugin"
 )
 
+type rawServers struct {
+	Servers []json.RawMessage
+}
+
+type rawBackends struct {
+	Backends []json.RawMessage
+}
+
+type rawMiddlewares struct {
+	Middlewares []json.RawMessage
+}
+
 type rawFrontends struct {
 	Frontends []json.RawMessage
+}
+
+type rawHosts struct {
+	Hosts []json.RawMessage
+}
+
+type rawListeners struct {
+	Listeners []json.RawMessage
 }
 
 type rawFrontend struct {
@@ -32,15 +52,15 @@ type RawMiddleware struct {
 }
 
 func HostsFromJSON(in []byte) ([]Host, error) {
-	var hs []Host
+	var hs rawHosts
 	err := json.Unmarshal(in, &hs)
 	if err != nil {
 		return nil, err
 	}
 	out := []Host{}
-	if len(hs) != 0 {
-		for _, raw := range hs {
-			h, err := NewHost(raw.Name, raw.Options)
+	if len(hs.Hosts) != 0 {
+		for _, raw := range hs.Hosts {
+			h, err := HostFromJSON(raw)
 			if err != nil {
 				return nil, err
 			}
@@ -83,6 +103,25 @@ func ListenerFromJSON(in []byte) (*Listener, error) {
 		return nil, err
 	}
 	return NewListener(l.Id, l.Protocol, l.Address.Network, l.Address.Address)
+}
+
+func ListenersFromJSON(in []byte) ([]Listener, error) {
+	var rls *rawListeners
+	if err := json.Unmarshal(in, &rls); err != nil {
+		return nil, err
+	}
+	out := make([]Listener, len(rls.Listeners))
+	if len(out) == 0 {
+		return out, nil
+	}
+	for i, rl := range rls.Listeners {
+		l, err := ListenerFromJSON(rl)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = *l
+	}
+	return out, nil
 }
 
 func KeyPairFromJSON(in []byte) (*KeyPair, error) {
@@ -138,6 +177,25 @@ func MiddlewareFromJSON(in []byte, getter plugin.SpecGetter) (*Middleware, error
 	}, nil
 }
 
+func BackendsFromJSON(in []byte) ([]Backend, error) {
+	var rbs *rawBackends
+	if err := json.Unmarshal(in, &rbs); err != nil {
+		return nil, err
+	}
+	out := make([]Backend, len(rbs.Backends))
+	if len(out) == 0 {
+		return out, nil
+	}
+	for i, rb := range rbs.Backends {
+		b, err := BackendFromJSON(rb)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = *b
+	}
+	return out, nil
+}
+
 func BackendFromJSON(in []byte) (*Backend, error) {
 	var rb *rawBackend
 
@@ -160,6 +218,44 @@ func BackendFromJSON(in []byte) (*Backend, error) {
 		return nil, err
 	}
 	return b, nil
+}
+
+func ServersFromJSON(in []byte) ([]Server, error) {
+	var rs *rawServers
+	if err := json.Unmarshal(in, &rs); err != nil {
+		return nil, err
+	}
+	out := make([]Server, len(rs.Servers))
+	if len(out) == 0 {
+		return out, nil
+	}
+	for i, rs := range rs.Servers {
+		s, err := ServerFromJSON(rs)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = *s
+	}
+	return out, nil
+}
+
+func MiddlewaresFromJSON(in []byte, getter plugin.SpecGetter) ([]Middleware, error) {
+	var rm *rawMiddlewares
+	if err := json.Unmarshal(in, &rm); err != nil {
+		return nil, err
+	}
+	out := make([]Middleware, len(rm.Middlewares))
+	if len(out) == 0 {
+		return out, nil
+	}
+	for i, r := range rm.Middlewares {
+		m, err := MiddlewareFromJSON(r, getter)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = *m
+	}
+	return out, nil
 }
 
 func ServerFromJSON(in []byte) (*Server, error) {

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/metrics"
-	"github.com/mailgun/vulcand/backend"
+	"github.com/mailgun/vulcand/engine"
 )
 
 const (
@@ -20,23 +20,23 @@ const (
 	MessageLatency    = "%0.2f quantile latency stands out"
 )
 
-// MarkEndpointAnomalies takes the list of endpoints and marks anomalies detected within this set
+// MarkServerAnomalies takes the list of servers and marks anomalies detected within this set
 // by modifying the inner Verdict property.
-func MarkEndpointAnomalies(endpoints []*backend.Endpoint) error {
-	if len(endpoints) == 0 {
+func MarkServerAnomalies(servers []engine.Server) error {
+	if len(servers) == 0 {
 		return nil
 	}
 
-	stats := make([]*backend.RoundTripStats, len(endpoints))
-	for i, e := range endpoints {
-		stats[i] = &e.Stats
+	stats := make([]engine.RoundTripStats, len(servers))
+	for i, s := range servers {
+		stats[i] = *s.Stats
 	}
 	return MarkAnomalies(stats)
 }
 
 // MarkAnomalies takes the list of stats and marks anomalies detected within this group by updating
 // the Verdict property.
-func MarkAnomalies(stats []*backend.RoundTripStats) error {
+func MarkAnomalies(stats []engine.RoundTripStats) error {
 	if len(stats) == 0 {
 		return nil
 	}
@@ -49,7 +49,7 @@ func MarkAnomalies(stats []*backend.RoundTripStats) error {
 	return markAppErrorRates(stats)
 }
 
-func markNetErrorRates(stats []*backend.RoundTripStats) error {
+func markNetErrorRates(stats []engine.RoundTripStats) error {
 	errRates := make([]float64, len(stats))
 	for i, s := range stats {
 		errRates[i] = s.NetErrorRatio()
@@ -59,18 +59,18 @@ func markNetErrorRates(stats []*backend.RoundTripStats) error {
 	for _, s := range stats {
 		if bad[s.NetErrorRatio()] {
 			s.Verdict.IsBad = true
-			s.Verdict.Anomalies = append(s.Verdict.Anomalies, backend.Anomaly{Code: CodeNetErrorRate, Message: MessageNetErrRate})
+			s.Verdict.Anomalies = append(s.Verdict.Anomalies, engine.Anomaly{Code: CodeNetErrorRate, Message: MessageNetErrRate})
 		}
 	}
 	return nil
 }
 
-func markLatencies(stats []*backend.RoundTripStats) error {
+func markLatencies(stats []engine.RoundTripStats) error {
 	// We are processing only median as others are more volatile
 	return markLatency(0, stats)
 }
 
-func markLatency(index int, stats []*backend.RoundTripStats) error {
+func markLatency(index int, stats []engine.RoundTripStats) error {
 	quantiles := make([]time.Duration, len(stats))
 	for i, s := range stats {
 		v, err := s.LatencyBrackets.GetQuantile(50)
@@ -87,7 +87,7 @@ func markLatency(index int, stats []*backend.RoundTripStats) error {
 			s.Verdict.IsBad = true
 			s.Verdict.Anomalies = append(
 				s.Verdict.Anomalies,
-				backend.Anomaly{
+				engine.Anomaly{
 					Code:    CodeLatency,
 					Message: fmt.Sprintf(MessageLatency, quantile),
 				})
@@ -96,7 +96,7 @@ func markLatency(index int, stats []*backend.RoundTripStats) error {
 	return nil
 }
 
-func markAppErrorRates(stats []*backend.RoundTripStats) error {
+func markAppErrorRates(stats []engine.RoundTripStats) error {
 	errRates := make([]float64, len(stats))
 	for i, s := range stats {
 		errRates[i] = s.AppErrorRatio()
@@ -107,7 +107,7 @@ func markAppErrorRates(stats []*backend.RoundTripStats) error {
 		if bad[s.AppErrorRatio()] {
 			s.Verdict.IsBad = true
 			s.Verdict.Anomalies = append(
-				s.Verdict.Anomalies, backend.Anomaly{Code: CodeAppErrorRate, Message: MessageAppErrRate})
+				s.Verdict.Anomalies, engine.Anomaly{Code: CodeAppErrorRate, Message: MessageAppErrRate})
 		}
 	}
 	return nil
