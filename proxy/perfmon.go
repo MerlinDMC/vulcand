@@ -137,7 +137,7 @@ func (m *perfMon) deleteBackend(bk engine.BackendKey) {
 	for k, _ := range m.servers {
 		key := engine.MustParseServerKey(k)
 		if key.BackendKey == bk {
-			m.deleteBucket(bk.String(), m.servers)
+			m.deleteBucket(key.String(), m.servers)
 		}
 	}
 }

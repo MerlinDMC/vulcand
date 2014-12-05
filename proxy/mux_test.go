@@ -2,7 +2,7 @@ package proxy
 
 import (
 	"net/http"
-	//	"time"
+	"time"
 
 	//	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/limit/tokenbucket"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/log"
@@ -278,6 +278,46 @@ func (s *ServerSuite) TestMiddlewareCRUD(c *C) {
 	}
 }
 
+func (s *ServerSuite) TestMiddlewareUpdate(c *C) {
+	e := NewTestResponder("Hi, I'm endpoint 1")
+	defer e.Close()
+
+	c.Assert(s.mux.Start(), IsNil)
+
+	b := MakeBatch(Batch{
+		Addr:  "localhost:31000",
+		Route: `Path("/")`,
+		URL:   e.URL,
+	})
+
+	c.Assert(s.mux.UpsertServer(b.BK, b.S), IsNil)
+	c.Assert(s.mux.UpsertFrontend(b.F), IsNil)
+	c.Assert(s.mux.UpsertListener(b.L), IsNil)
+
+	// 1 request per second
+	rl := MakeRateLimit(UID("rl"), 1, "client.ip", 1, 1)
+
+	_, err := rl.Middleware.NewMiddleware()
+	c.Assert(err, IsNil)
+
+	c.Assert(s.mux.UpsertMiddleware(b.FK, rl), IsNil)
+
+	c.Assert(GETResponse(c, b.FrontendURL("/"), Opts{}), Equals, "Hi, I'm endpoint 1")
+	re, _, err := GET(MakeURL(b.L, "/"), Opts{})
+	c.Assert(err, IsNil)
+	c.Assert(re.StatusCode, Equals, 429) // too many requests
+
+	// 100 requests per second
+	rl = MakeRateLimit(rl.Id, 100, "client.ip", 100, 1)
+
+	c.Assert(s.mux.UpsertMiddleware(b.FK, rl), IsNil)
+
+	for i := 0; i < 3; i++ {
+		c.Assert(GETResponse(c, b.FrontendURL("/"), Opts{}), Equals, "Hi, I'm endpoint 1")
+		c.Assert(GETResponse(c, b.FrontendURL("/"), Opts{}), Equals, "Hi, I'm endpoint 1")
+	}
+}
+
 func (s *ServerSuite) TestFrontendOptionsCRUD(c *C) {
 	e := NewTestResponder("Hi, I'm endpoint 1")
 	defer e.Close()
@@ -440,13 +480,13 @@ func (s *ServerSuite) TestServerAddBad(c *C) {
 	e := NewTestResponder("Hi, I'm endpoint")
 	defer e.Close()
 
+	c.Assert(s.mux.Start(), IsNil)
+
 	b := MakeBatch(Batch{Addr: "localhost:11300", Route: `Path("/")`, URL: e.URL})
 
 	c.Assert(s.mux.UpsertServer(b.BK, b.S), IsNil)
 	c.Assert(s.mux.UpsertFrontend(b.F), IsNil)
 	c.Assert(s.mux.UpsertListener(b.L), IsNil)
-
-	c.Assert(s.mux.Start(), IsNil)
 
 	c.Assert(GETResponse(c, b.FrontendURL("/"), Opts{}), Equals, "Hi, I'm endpoint")
 
@@ -458,6 +498,8 @@ func (s *ServerSuite) TestServerAddBad(c *C) {
 }
 
 func (s *ServerSuite) TestServerUpsertURL(c *C) {
+	c.Assert(s.mux.Start(), IsNil)
+
 	e1 := NewTestResponder("Hi, I'm endpoint 1")
 	defer e1.Close()
 
@@ -470,8 +512,6 @@ func (s *ServerSuite) TestServerUpsertURL(c *C) {
 	c.Assert(s.mux.UpsertFrontend(b.F), IsNil)
 	c.Assert(s.mux.UpsertListener(b.L), IsNil)
 
-	c.Assert(s.mux.Start(), IsNil)
-
 	c.Assert(GETResponse(c, b.FrontendURL("/"), Opts{}), Equals, "Hi, I'm endpoint 1")
 
 	b.S.URL = e2.URL
@@ -480,210 +520,80 @@ func (s *ServerSuite) TestServerUpsertURL(c *C) {
 	c.Assert(GETResponse(c, b.FrontendURL("/"), Opts{}), Equals, "Hi, I'm endpoint 2")
 }
 
-/*
-func (s *ServerSuite) TestPerfMonitoring(c *C) {
-	c.Assert(s.mux.Start(), IsNil)
-
-	e1 := NewTestResponder("Hi, I'm endpoint 1")
-	defer e1.Close()
-
-	e2 := NewTestResponder("Hi, I'm endpoint 2")
-	defer e2.Close()
-
-	l, h := MakeLocation(LocOpts{Hostname: "localhost", Addr: "localhost:31000", URL: e1.URL})
-	l.Id = "loc1"
-
-	c.Assert(s.mux.UpsertLocation(h, l), IsNil)
-	c.Assert(GETResponse(c, MakeURL(l, h.Listeners[0]), Opts{}), Equals, "Hi, I'm endpoint 1")
-
-	// Make sure endpoint has been added to the performance monitor
-	_, ok := s.mux.perfMon.locations[l.GetUniqueId().String()]
-	c.Assert(ok, Equals, true)
-
-	// Make sure upstream has been added to the performance monitor
-	_, ok = s.mux.perfMon.upstreams[l.Upstream.GetUniqueId().String()]
-	c.Assert(ok, Equals, true)
-
-	// Delete the location
-	c.Assert(s.mux.DeleteLocation(h, l.Id), IsNil)
-
-	// Make sure location has been added to the performance monitor
-	_, ok = s.mux.perfMon.locations[l.GetUniqueId().String()]
-	c.Assert(ok, Equals, false)
-
-	// Delete the upstream
-	c.Assert(s.mux.DeleteUpstream(l.Upstream.Id), IsNil)
-
-	_, ok = s.mux.perfMon.upstreams[l.Upstream.Id]
-	c.Assert(ok, Equals, false)
-
-	// Make sure all endpoints in the upstream have been deleted in the monitor
-	_, ok = s.mux.perfMon.endpoints[l.Upstream.Endpoints[0].GetUniqueId().String()]
-	c.Assert(ok, Equals, false)
-}
-
-
-func (s *ServerSuite) TestUpdateRateLimit(c *C) {
-	l, h := MakeLocation(LocOpts{Hostname: "localhost", Addr: "localhost:31000", URL: "http://localhost:32000"})
-	c.Assert(s.mux.UpsertLocation(h, l), IsNil)
-
-	rl := MakeRateLimit("rl1", 100, "client.ip", 200, 10, l)
-
-	c.Assert(s.mux.UpsertLocationMiddleware(h, l, rl), IsNil)
-
-	loc := s.mux.getLocation(h.Name, l.Id)
-	c.Assert(loc, NotNil)
-
-	// Make sure connection limit and rate limit are here as well
-	chain := loc.GetMiddlewareChain()
-	limiter := chain.Get("ratelimit.rl1").(*tokenbucket.TokenLimiter)
-	rs1 := tokenbucket.NewRateSet()
-	rs1.Add(10*time.Second, 100, 200)
-	c.Assert(limiter.DefaultRates(), DeepEquals, rs1)
-
-	// Update the rate limit
-	rl = MakeRateLimit("rl1", 12, "client.ip", 20, 3, l)
-	c.Assert(s.mux.UpsertLocationMiddleware(h, l, rl), IsNil)
-
-	// Make sure the changes have taken place
-	limiter = chain.Get("ratelimit.rl1").(*tokenbucket.TokenLimiter)
-	rs2 := tokenbucket.NewRateSet()
-	rs2.Add(3*time.Second, 12, 20)
-	c.Assert(limiter.DefaultRates(), DeepEquals, rs2)
-}
-
-func (s *ServerSuite) TestGetStats(c *C) {
-	e1 := NewTestResponder("Hi, I'm endpoint 1")
-	defer e1.Close()
-
-	e2 := NewTestResponder("Hi, I'm endpoint 2")
-	defer e2.Close()
-
-	c.Assert(s.mux.Start(), IsNil)
-
-	l, h := MakeLocation(LocOpts{Hostname: "localhost", Addr: "localhost:31000", URL: e1.URL})
-	l.Upstream.Endpoints = []*Endpoint{
-		{
-			UpstreamId: l.Upstream.Id,
-			Id:         e1.URL,
-			Url:        e1.URL,
-		},
-		{
-			UpstreamId: l.Upstream.Id,
-			Id:         e2.URL,
-			Url:        e2.URL,
-		},
-	}
-
-	c.Assert(s.mux.UpdateLocationPath(h, l, l.Path), IsNil)
-	for i := 0; i < 10; i++ {
-		GETResponse(c, MakeURL(l, h.Listeners[0]), Opts{})
-	}
-
-	stats, err := s.mux.GetEndpointStats(l.Upstream.Endpoints[0])
-	c.Assert(err, IsNil)
-	c.Assert(stats, NotNil)
-
-	locStats, err := s.mux.GetLocationStats(l)
-	c.Assert(locStats, NotNil)
-	c.Assert(err, IsNil)
-
-	upStats, err := s.mux.GetUpstreamStats(l.Upstream)
-	c.Assert(upStats, NotNil)
-	c.Assert(err, IsNil)
-
-	topLocs, err := s.mux.GetTopLocations("", "")
-	c.Assert(err, IsNil)
-	c.Assert(len(topLocs), Equals, 1)
-
-	topEndpoints, err := s.mux.GetTopEndpoints("")
-	c.Assert(err, IsNil)
-	c.Assert(len(topEndpoints), Equals, 2)
-}
-
-func (s *ServerSuite) TestUpdateUpstreamOptions(c *C) {
+func (s *ServerSuite) TestBackendUpdateOptions(c *C) {
 	e := NewTestServer(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(10 * time.Millisecond)
-		w.Write([]byte("Hi, I'm backend"))
+		w.Write([]byte("slow server"))
 	})
 	defer e.Close()
 
 	c.Assert(s.mux.Start(), IsNil)
 
-	l, h := MakeLocation(LocOpts{Hostname: "localhost", Addr: "localhost:31000", URL: e.URL})
-	l.Upstream.Options = UpstreamOptions{Timeouts: UpstreamTimeouts{Read: "1ms"}}
-	c.Assert(s.mux.UpsertLocation(h, l), IsNil)
+	b := MakeBatch(Batch{Addr: "localhost:11300", Route: `Path("/")`, URL: e.URL})
 
-	l1, h := MakeLocation(LocOpts{Hostname: "localhost", Addr: "localhost:31000", URL: e.URL})
-	l1.Upstream = l.Upstream
-	c.Assert(s.mux.UpsertLocation(h, l1), IsNil)
+	settings := b.B.HTTPSettings()
+	settings.Timeouts = engine.HTTPBackendTimeouts{Read: "1ms"}
+	b.B.Settings = settings
 
-	re, _, err := GET(MakeURL(l, h.Listeners[0]), Opts{})
+	c.Assert(s.mux.UpsertBackend(b.B), IsNil)
+	c.Assert(s.mux.UpsertServer(b.BK, b.S), IsNil)
+	c.Assert(s.mux.UpsertFrontend(b.F), IsNil)
+	c.Assert(s.mux.UpsertListener(b.L), IsNil)
+
+	re, _, err := GET(MakeURL(b.L, "/"), Opts{})
 	c.Assert(err, IsNil)
 	c.Assert(re, NotNil)
 	c.Assert(re.StatusCode, Equals, http.StatusRequestTimeout)
 
-	re, _, err = GET(MakeURL(l1, h.Listeners[0]), Opts{})
-	c.Assert(re.StatusCode, Equals, http.StatusRequestTimeout)
+	settings.Timeouts = engine.HTTPBackendTimeouts{Read: "20ms"}
+	b.B.Settings = settings
 
-	l.Upstream.Options = UpstreamOptions{Timeouts: UpstreamTimeouts{Read: "20ms"}}
-	c.Assert(s.mux.UpsertUpstream(l.Upstream), IsNil)
+	c.Assert(s.mux.UpsertBackend(b.B), IsNil)
 
-	c.Assert(GETResponse(c, MakeURL(l, h.Listeners[0]), Opts{}), Equals, "Hi, I'm backend")
-	c.Assert(GETResponse(c, MakeURL(l1, h.Listeners[0]), Opts{}), Equals, "Hi, I'm backend")
+	c.Assert(GETResponse(c, b.FrontendURL("/"), Opts{}), Equals, "slow server")
 }
 
-func (s *ServerSuite) TestSwitchUpstreams(c *C) {
+func (s *ServerSuite) TestSwitchBackendOptions(c *C) {
 	e := NewTestServer(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(50 * time.Millisecond)
-		w.Write([]byte("Hi, I'm backend"))
+		time.Sleep(10 * time.Millisecond)
+		w.Write([]byte("slow server"))
 	})
 	defer e.Close()
 
 	c.Assert(s.mux.Start(), IsNil)
 
-	l, h := MakeLocation(LocOpts{Hostname: "localhost", Addr: "localhost:31000", URL: e.URL})
-	l.Upstream.Options = UpstreamOptions{Timeouts: UpstreamTimeouts{Read: "10ms"}}
-	c.Assert(s.mux.UpsertLocation(h, l), IsNil)
+	b := MakeBatch(Batch{Addr: "localhost:11300", Route: `Path("/")`, URL: e.URL})
 
-	up := l.Upstream
+	settings := b.B.HTTPSettings()
+	settings.Timeouts = engine.HTTPBackendTimeouts{Read: "1ms"}
+	b.B.Settings = settings
 
-	// This upstream is in use and can not be deleted
-	c.Assert(s.mux.DeleteUpstream(up.Id), NotNil)
+	b2 := MakeBackend()
+	settings = b2.HTTPSettings()
+	settings.Timeouts = engine.HTTPBackendTimeouts{Read: "20ms"}
+	b2.Settings = settings
 
-	re, _, err := GET(MakeURL(l, h.Listeners[0]), Opts{})
+	c.Assert(s.mux.UpsertBackend(b.B), IsNil)
+	c.Assert(s.mux.UpsertServer(b.BK, b.S), IsNil)
+
+	c.Assert(s.mux.UpsertBackend(b2), IsNil)
+	c.Assert(s.mux.UpsertServer(engine.BackendKey{Id: b2.Id}, b.S), IsNil)
+
+	c.Assert(s.mux.UpsertFrontend(b.F), IsNil)
+	c.Assert(s.mux.UpsertListener(b.L), IsNil)
+
+	re, _, err := GET(MakeURL(b.L, "/"), Opts{})
 	c.Assert(err, IsNil)
 	c.Assert(re, NotNil)
 	c.Assert(re.StatusCode, Equals, http.StatusRequestTimeout)
 
-	up2 := &Upstream{
-		Id: "up2",
-		Endpoints: []*Endpoint{
-			{
-				UpstreamId: "up2",
-				Id:         e.URL,
-				Url:        e.URL,
-			},
-		},
-		Options: UpstreamOptions{
-			Timeouts: UpstreamTimeouts{
-				Read: "100ms",
-			},
-		},
-	}
+	b.F.BackendId = b2.Id
+	c.Assert(s.mux.UpsertFrontend(b.F), IsNil)
 
-	l.Upstream = up2
-	c.Assert(s.mux.UpdateLocationUpstream(h, l), IsNil)
-	c.Assert(GETResponse(c, MakeURL(l, h.Listeners[0]), Opts{}), Equals, "Hi, I'm backend")
-
-	// Upstream can now be deleted
-	c.Assert(s.mux.DeleteUpstream(up.Id), IsNil)
+	c.Assert(GETResponse(c, b.FrontendURL("/"), Opts{}), Equals, "slow server")
 }
 
 func (s *ServerSuite) TestFilesNoFiles(c *C) {
-	e := NewTestResponder("Hi, I'm endpoint 1")
-	defer e.Close()
-
 	files, err := s.mux.GetFiles()
 	c.Assert(err, IsNil)
 	c.Assert(len(files), Equals, 0)
@@ -696,13 +606,20 @@ func (s *ServerSuite) TestTakeFiles(c *C) {
 
 	c.Assert(s.mux.Start(), IsNil)
 
-	l, h := MakeLocation(LocOpts{Hostname: "localhost", Addr: "localhost:31000", URL: e.URL})
-	h.KeyPair = &KeyPair{Key: localhostKey, Cert: localhostCert}
-	h.Listeners[0].Protocol = HTTPS
+	b := MakeBatch(Batch{
+		Addr:     "localhost:41000",
+		Route:    `Path("/")`,
+		URL:      e.URL,
+		Protocol: engine.HTTPS,
+		KeyPair:  &engine.KeyPair{Key: localhostKey, Cert: localhostCert},
+	})
 
-	c.Assert(s.mux.UpsertLocation(h, l), IsNil)
+	c.Assert(s.mux.UpsertHost(b.H), IsNil)
+	c.Assert(s.mux.UpsertServer(b.BK, b.S), IsNil)
+	c.Assert(s.mux.UpsertFrontend(b.F), IsNil)
+	c.Assert(s.mux.UpsertListener(b.L), IsNil)
 
-	c.Assert(GETResponse(c, MakeURL(l, h.Listeners[0]), Opts{}), Equals, "Hi, I'm endpoint 1")
+	c.Assert(GETResponse(c, b.FrontendURL("/"), Opts{}), Equals, "Hi, I'm endpoint 1")
 
 	mux2, err := New(s.lastId, Options{})
 	c.Assert(err, IsNil)
@@ -710,11 +627,18 @@ func (s *ServerSuite) TestTakeFiles(c *C) {
 	e2 := NewTestResponder("Hi, I'm endpoint 2")
 	defer e2.Close()
 
-	l2, h2 := MakeLocation(LocOpts{Hostname: "localhost", Addr: "localhost:31000", URL: e2.URL})
-	h2.KeyPair = &KeyPair{Key: localhostKey2, Cert: localhostCert2}
-	h2.Listeners[0].Protocol = HTTPS
+	b2 := MakeBatch(Batch{
+		Addr:     "localhost:41000",
+		Route:    `Path("/")`,
+		URL:      e2.URL,
+		Protocol: engine.HTTPS,
+		KeyPair:  &engine.KeyPair{Key: localhostKey2, Cert: localhostCert2},
+	})
 
-	c.Assert(mux2.UpsertLocation(h2, l2), IsNil)
+	c.Assert(mux2.UpsertHost(b2.H), IsNil)
+	c.Assert(mux2.UpsertServer(b2.BK, b2.S), IsNil)
+	c.Assert(mux2.UpsertFrontend(b2.F), IsNil)
+	c.Assert(mux2.UpsertListener(b2.L), IsNil)
 
 	files, err := s.mux.GetFiles()
 	c.Assert(err, IsNil)
@@ -724,9 +648,93 @@ func (s *ServerSuite) TestTakeFiles(c *C) {
 	s.mux.Stop(true)
 	defer mux2.Stop(true)
 
-	c.Assert(GETResponse(c, MakeURL(l2, h2.Listeners[0]), Opts{}), Equals, "Hi, I'm endpoint 2")
+	c.Assert(GETResponse(c, b2.FrontendURL("/"), Opts{}), Equals, "Hi, I'm endpoint 2")
 }
-*/
+
+func (s *ServerSuite) TestPerfMon(c *C) {
+	c.Assert(s.mux.Start(), IsNil)
+
+	e1 := NewTestResponder("Hi, I'm endpoint 1")
+	defer e1.Close()
+
+	b := MakeBatch(Batch{Addr: "localhost:11300", Route: `Path("/")`, URL: e1.URL})
+
+	c.Assert(s.mux.UpsertServer(b.BK, b.S), IsNil)
+	c.Assert(s.mux.UpsertFrontend(b.F), IsNil)
+	c.Assert(s.mux.UpsertListener(b.L), IsNil)
+
+	c.Assert(GETResponse(c, b.FrontendURL("/"), Opts{}), Equals, "Hi, I'm endpoint 1")
+
+	// Make sure server has been added to the performance monitor
+	_, ok := s.mux.perfMon.frontends[b.FK.String()]
+	c.Assert(ok, Equals, true)
+
+	// Make sureserver has been added to the performance monitor
+	_, ok = s.mux.perfMon.servers[b.SK.String()]
+	c.Assert(ok, Equals, true)
+
+	c.Assert(s.mux.DeleteFrontend(b.FK), IsNil)
+
+	// Make sure frontend has been removed the performance monitor
+	_, ok = s.mux.perfMon.frontends[b.FK.String()]
+	c.Assert(ok, Equals, false)
+
+	// Delete the backend
+	c.Assert(s.mux.DeleteBackend(b.BK), IsNil)
+
+	_, ok = s.mux.perfMon.backends[b.BK.String()]
+	c.Assert(ok, Equals, false)
+
+	_, ok = s.mux.perfMon.servers[b.BK.String()]
+	c.Assert(ok, Equals, false)
+
+	// Make sure servers of the backend have been deleted in the monitor
+	_, ok = s.mux.perfMon.servers[b.SK.String()]
+	c.Assert(ok, Equals, false)
+}
+
+func (s *ServerSuite) TestGetStats(c *C) {
+	e1 := NewTestResponder("Hi, I'm endpoint 1")
+	defer e1.Close()
+
+	e2 := NewTestResponder("Hi, I'm endpoint 2")
+	defer e2.Close()
+
+	c.Assert(s.mux.Start(), IsNil)
+
+	b := MakeBatch(Batch{Addr: "localhost:11300", Route: `Path("/")`, URL: e1.URL})
+
+	srv2 := MakeServer(e2.URL)
+	c.Assert(s.mux.UpsertServer(b.BK, b.S), IsNil)
+	c.Assert(s.mux.UpsertServer(b.BK, srv2), IsNil)
+
+	c.Assert(s.mux.UpsertFrontend(b.F), IsNil)
+	c.Assert(s.mux.UpsertListener(b.L), IsNil)
+
+	for i := 0; i < 10; i++ {
+		GETResponse(c, MakeURL(b.L, "/"), Opts{})
+	}
+
+	stats, err := s.mux.ServerStats(b.SK)
+	c.Assert(err, IsNil)
+	c.Assert(stats, NotNil)
+
+	fStats, err := s.mux.FrontendStats(b.FK)
+	c.Assert(fStats, NotNil)
+	c.Assert(err, IsNil)
+
+	bStats, err := s.mux.BackendStats(b.BK)
+	c.Assert(bStats, NotNil)
+	c.Assert(err, IsNil)
+
+	topF, err := s.mux.TopFrontends(nil)
+	c.Assert(err, IsNil)
+	c.Assert(len(topF), Equals, 1)
+
+	topServers, err := s.mux.TopServers(nil)
+	c.Assert(err, IsNil)
+	c.Assert(len(topServers), Equals, 2)
+}
 
 func AssertSameServers(c *C, we []*roundrobin.WeightedEndpoint, s []engine.Server) {
 	if !ServersEq(we, s) {
