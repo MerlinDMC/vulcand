@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/buger/goterm"
-	"github.com/mailgun/vulcand/backend"
+	"github.com/mailgun/vulcand/engine"
 )
 
 func (cmd *Command) printResult(format string, in interface{}, err error) {
@@ -36,39 +36,39 @@ func (cmd *Command) printInfo(message string, params ...interface{}) {
 	fmt.Fprintf(cmd.out, "INFO: %s\n", fmt.Sprintf(message, params...))
 }
 
-func (cmd *Command) printHosts(hosts []*backend.Host) {
+func (cmd *Command) printHosts(hosts []engine.Host) {
 	fmt.Fprintf(cmd.out, "\n")
 	printTree(cmd.out, hostsView(hosts), 0, true, "")
 }
 
-func (cmd *Command) printHost(host *backend.Host) {
+func (cmd *Command) printHost(host *engine.Host) {
 	fmt.Fprintf(cmd.out, "\n")
 	printTree(cmd.out, hostView(host), 0, true, "")
 }
 
-func (cmd *Command) printOverview(locations []*backend.Location, endpoints []*backend.Endpoint) {
+func (cmd *Command) printOverview(frontend []engine.Frontend, servers []engine.Server) {
 	out := &bytes.Buffer{}
-	fmt.Fprintf(out, "[Locations]\n\n")
-	fmt.Fprintf(out, locationsOverview(locations))
+	fmt.Fprintf(out, "[Frontend]\n\n")
+	fmt.Fprintf(out, frontendOverview(frontend))
 	fmt.Fprintf(cmd.out, out.String())
 
 	out = &bytes.Buffer{}
-	fmt.Fprintf(out, "\n\n[Endpoints]\n\n")
-	fmt.Fprintf(out, endpointsOverview(endpoints))
+	fmt.Fprintf(out, "\n\n[Servers]\n\n")
+	fmt.Fprintf(out, serversOverview(servers))
 	fmt.Fprintf(cmd.out, out.String())
 }
 
-func (cmd *Command) printUpstreams(upstreams []*backend.Upstream) {
+func (cmd *Command) printBackends(backends []engine.Backend) {
 	fmt.Fprintf(cmd.out, "\n")
-	printTree(cmd.out, upstreamsView(upstreams), 0, true, "")
+	printTree(cmd.out, backendsView(backends), 0, true, "")
 }
 
-func (cmd *Command) printUpstream(upstream *backend.Upstream) {
+func (cmd *Command) printBackend(backend *engine.Backend) {
 	fmt.Fprintf(cmd.out, "\n")
-	printTree(cmd.out, upstreamView(upstream), 0, true, "")
+	printTree(cmd.out, backendView(backend), 0, true, "")
 }
 
-func (cmd *Command) printLocation(l *backend.Location) {
+func (cmd *Command) printFrontend(l *engine.Frontend) {
 	fmt.Fprintf(cmd.out, "\n")
-	printTree(cmd.out, locationView(l), 0, true, "")
+	printTree(cmd.out, frontendView(l), 0, true, "")
 }

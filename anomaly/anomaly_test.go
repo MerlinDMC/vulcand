@@ -32,7 +32,19 @@ func (s *AnomalySuite) TestMarkAnomalies(c *C) {
 		{
 			Servers: []Server{
 				Server{
-					Stats: &RoundTripStats{},
+					Stats: &RoundTripStats{
+						LatencyBrackets: []Bracket{
+							{
+								Quantile: 50,
+								Value:    time.Second,
+							},
+						},
+						Counters: Counters{
+							Period:    time.Second,
+							NetErrors: 0,
+							Total:     100,
+						},
+					},
 				},
 			},
 			Verdicts: []Verdict{{IsBad: false}},
@@ -169,10 +181,12 @@ func (s *AnomalySuite) TestMarkAnomalies(c *C) {
 		},
 	}
 
-	for _, t := range tc {
-		MarkServerAnomalies(t.Servers)
-		for i, e := range t.Servers {
-			c.Assert(e.Stats.Verdict, DeepEquals, t.Verdicts[i])
+	for i, t := range tc {
+		comment := Commentf("Test case #%d", i)
+		err := MarkServerAnomalies(t.Servers)
+		c.Assert(err, IsNil)
+		for j, e := range t.Servers {
+			c.Assert(e.Stats.Verdict, DeepEquals, t.Verdicts[j], comment)
 		}
 	}
 }

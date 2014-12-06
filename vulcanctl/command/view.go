@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/mailgun/vulcand/backend"
+	"github.com/mailgun/vulcand/engine"
 )
 
 // Detailed hosts view with all the information
-func hostsView(hs []*backend.Host) *StringTree {
+func hostsView(hs []engine.Host) *StringTree {
 	r := &StringTree{
 		Node: "[hosts]",
 	}
@@ -18,23 +18,14 @@ func hostsView(hs []*backend.Host) *StringTree {
 	return r
 }
 
-func hostView(h *backend.Host) *StringTree {
+func hostView(h engine.Host) *StringTree {
 	host := &StringTree{
 		Node: fmt.Sprintf("host[%s]", h.Name),
 	}
-
-	if len(h.Locations) != 0 {
-		host.AddChild(locationsView(h.Locations))
-	}
-
-	if len(h.Listeners) != 0 {
-		host.AddChild(listenersView(h.Listeners))
-	}
-
 	return host
 }
 
-func listenersView(ls []*backend.Listener) *StringTree {
+func listenersView(ls []engine.Listener) *StringTree {
 	r := &StringTree{
 		Node: "[listeners]",
 	}
@@ -50,62 +41,54 @@ func listenersView(ls []*backend.Listener) *StringTree {
 	return r
 }
 
-func locationsView(ls []*backend.Location) *StringTree {
+func frontendsView(ls []engine.Frontend) *StringTree {
 	r := &StringTree{
-		Node: "[locations]",
+		Node: "[frontends]",
 	}
 	if len(ls) == 0 {
 		return r
 	}
 	for _, l := range ls {
-		r.AddChild(locationView(l))
+		r.AddChild(frontendView(l))
 	}
 	return r
 }
 
-func locationView(l *backend.Location) *StringTree {
-	r := &StringTree{
-		Node: fmt.Sprintf("loc[%s, %s]", l.Id, l.Path),
-	}
-
-	// Display upstream information
-	r.AddChild(upstreamView(l.Upstream))
-
-	// Middlewares information
-	if len(l.Middlewares) != 0 {
-		r.AddChild(middlewaresView(l.Middlewares))
-	}
-	return r
-}
-
-func upstreamsView(us []*backend.Upstream) *StringTree {
-	r := &StringTree{
-		Node: "[upstreams]",
-	}
-	for _, u := range us {
-		r.AddChild(upstreamView(u))
-	}
-	return r
-}
-
-func upstreamView(u *backend.Upstream) *StringTree {
-	r := &StringTree{
-		Node: fmt.Sprintf("upstream[%s]", u.Id),
-	}
-
-	for _, e := range u.Endpoints {
-		r.AddChild(endpointView(e))
-	}
-	return r
-}
-
-func endpointView(e *backend.Endpoint) *StringTree {
+func frontendView(l engine.Frontend) *StringTree {
 	return &StringTree{
-		Node: fmt.Sprintf("endpoint[%s, %s]", e.Id, e.Url),
+		Node: fmt.Sprintf("frontend[%s, %s]", l.Id, l.Route),
+	}
+	return r
+}
+
+func backendsView(bs []engine.Backend) *StringTree {
+	r := &StringTree{
+		Node: "[backends]",
+	}
+	for _, b := range bs {
+		r.AddChild(backendView(b))
+	}
+	return r
+}
+
+func backendView(b engine.Backend) *StringTree {
+	r := &StringTree{
+		Node: fmt.Sprintf("backend[%s]", b.Id),
+	}
+
+	for _, s := range b.Servers {
+		r.AddChild(serverView(s))
+	}
+	return r
+}
+
+func serverView(s engine.Server) *StringTree {
+	return &StringTree{
+		Node: fmt.Sprintf("server[%s, %s]", s.Id, s.URL),
 	}
 }
 
-func middlewaresView(ms []*backend.MiddlewareInstance) *StringTree {
+func middlewaresView(ms []engine.Middleware) *StringTree {
 	r := &StringTree{
 		Node: "[middlewares]",
 	}
@@ -119,7 +102,7 @@ func middlewaresView(ms []*backend.MiddlewareInstance) *StringTree {
 	return r
 }
 
-func middlewareView(m *backend.MiddlewareInstance) *StringTree {
+func middlewareView(m engine.Middleware) *StringTree {
 	return &StringTree{
 		Node: fmt.Sprintf("%s[%d, %s, %s]", m.Type, m.Priority, m.Id, m.Middleware),
 	}
@@ -127,7 +110,7 @@ func middlewareView(m *backend.MiddlewareInstance) *StringTree {
 
 // Sorts middlewares by their priority
 type middlewareSorter struct {
-	ms []*backend.MiddlewareInstance
+	ms []engine.Middleware
 }
 
 // Len is part of sort.Interface.

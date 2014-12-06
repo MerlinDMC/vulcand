@@ -32,7 +32,11 @@ func (cmd *Command) updateLogSeverityAction(c *cli.Context) {
 		cmd.printError(err)
 		return
 	}
-	cmd.printStatus(cmd.client.UpdateLogSeverity(sev))
+	if err := cmd.client.UpdateLogSeverity(sev); err != nil {
+		cmd.printError(err)
+		return
+	}
+	cmd.printOk("log severity updated")
 }
 
 func (cmd *Command) getLogSeverityAction(c *cli.Context) {

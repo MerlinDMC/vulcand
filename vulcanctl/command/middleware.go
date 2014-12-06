@@ -3,8 +3,8 @@ package command
 import (
 	"fmt"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/codegangsta/cli"
-	. "github.com/mailgun/vulcand/backend"
-	. "github.com/mailgun/vulcand/plugin"
+	"github.com/mailgun/vulcand/engine"
+	"github.com/mailgun/vulcand/plugin"
 )
 
 func NewMiddlewareCommands(cmd *Command) []cli.Command {
@@ -17,11 +17,12 @@ func NewMiddlewareCommands(cmd *Command) []cli.Command {
 	return out
 }
 
-func makeMiddlewareCommands(cmd *Command, spec *MiddlewareSpec) cli.Command {
+func makeMiddlewareCommands(cmd *Command, spec *plugin.MiddlewareSpec) cli.Command {
 	flags := append([]cli.Flag{}, spec.CliFlags...)
 	flags = append(flags,
 		cli.StringFlag{Name: "host", Usage: "location host"},
 		cli.StringFlag{Name: "location, loc", Usage: "location id"},
+		cli.DurationFlag{Name: "ttl", Usage: "ttl"},
 		cli.IntFlag{Name: "priority", Value: 1, Usage: "middleware priority, smaller values are lower"},
 		cli.StringFlag{Name: "id", Usage: fmt.Sprintf("%s id", spec.Type)})
 
@@ -30,24 +31,17 @@ func makeMiddlewareCommands(cmd *Command, spec *MiddlewareSpec) cli.Command {
 		Usage: fmt.Sprintf("Operations on %s middlewares", spec.Type),
 		Subcommands: []cli.Command{
 			{
-				Name:   "add",
-				Usage:  fmt.Sprintf("Add a new %s to location", spec.Type),
+				Name:   "upsert",
+				Usage:  fmt.Sprintf("Add new or update new %s to frontend", spec.Type),
 				Flags:  flags,
-				Action: makeAddMiddlewareAction(cmd, spec),
-			},
-			{
-				Name:   "update",
-				Usage:  fmt.Sprintf("Update %s", spec.Type),
-				Action: makeUpdateMiddlewareAction(cmd, spec),
-				Flags:  flags,
+				Action: makeUpsertMiddlewareAction(cmd, spec),
 			},
 			{
 				Name:   "rm",
-				Usage:  fmt.Sprintf("Remove %s from location", spec.Type),
+				Usage:  fmt.Sprintf("Remove %s from frontend", spec.Type),
 				Action: makeDeleteMiddlewareAction(cmd, spec),
 				Flags: []cli.Flag{
-					cli.StringFlag{Name: "host", Usage: "location's host"},
-					cli.StringFlag{Name: "location, loc", Usage: "Location id"},
+					cli.StringFlag{Name: "frontend, f", Usage: "Frontend id"},
 					cli.StringFlag{Name: "id", Usage: fmt.Sprintf("%s id", spec.Type)},
 				},
 			},
@@ -55,34 +49,30 @@ func makeMiddlewareCommands(cmd *Command, spec *MiddlewareSpec) cli.Command {
 	}
 }
 
-func makeAddMiddlewareAction(cmd *Command, spec *MiddlewareSpec) func(c *cli.Context) {
+func makeUpsertMiddlewareAction(cmd *Command, spec *plugin.MiddlewareSpec) func(c *cli.Context) {
 	return func(c *cli.Context) {
 		m, err := spec.FromCli(c)
 		if err != nil {
 			cmd.printError(err)
 		} else {
-			mi := &MiddlewareInstance{Id: c.String("id"), Middleware: m, Type: spec.Type, Priority: c.Int("priority")}
-			response, err := cmd.client.AddMiddleware(spec, c.String("host"), c.String("loc"), mi)
-			cmd.printResult("%s added", response, err)
+			mi := engine.Middleware{Id: c.String("id"), Middleware: m, Type: spec.Type, Priority: c.Int("priority")}
+			err := cmd.client.UpsertMiddleware(engine.FrontendKey{Id: c.String("frontend")}, mi, c.Duration("ttl"))
+			if err != nil {
+				cmd.printError(err)
+				return
+			}
+			cmd.printOk("%v upserted", spec.Type, err)
 		}
 	}
 }
 
-func makeUpdateMiddlewareAction(cmd *Command, spec *MiddlewareSpec) func(c *cli.Context) {
+func makeDeleteMiddlewareAction(cmd *Command, spec *plugin.MiddlewareSpec) func(c *cli.Context) {
 	return func(c *cli.Context) {
-		m, err := spec.FromCli(c)
-		if err != nil {
+		mk := engine.MiddlewareKey{FrontendKey: engine.FrontendKey{Id: c.String("frontend")}, Id: c.String("id")}
+		if err := cmd.client.DeleteMiddleware(mk); err != nil {
 			cmd.printError(err)
-		} else {
-			mi := &MiddlewareInstance{Id: c.String("id"), Middleware: m, Type: spec.Type}
-			response, err := cmd.client.UpdateMiddleware(spec, c.String("host"), c.String("loc"), mi)
-			cmd.printResult("%s updated", response, err)
+			return
 		}
-	}
-}
-
-func makeDeleteMiddlewareAction(cmd *Command, spec *MiddlewareSpec) func(c *cli.Context) {
-	return func(c *cli.Context) {
-		cmd.printStatus(cmd.client.DeleteMiddleware(spec, c.String("host"), c.String("loc"), c.String("id")))
+		cmd.printOk("%v deleted", spec.Type)
 	}
 }

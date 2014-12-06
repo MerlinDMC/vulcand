@@ -19,11 +19,11 @@ import (
 
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/metrics"
 	"github.com/mailgun/vulcand/api"
-	"github.com/mailgun/vulcand/backend"
-	"github.com/mailgun/vulcand/backend/etcdbackend"
+	"github.com/mailgun/vulcand/engine"
+	"github.com/mailgun/vulcand/engine/etcdng"
 	"github.com/mailgun/vulcand/plugin"
+	"github.com/mailgun/vulcand/proxy"
 	"github.com/mailgun/vulcand/secret"
-	"github.com/mailgun/vulcand/server"
 	"github.com/mailgun/vulcand/supervisor"
 )
 
@@ -51,7 +51,7 @@ type Service struct {
 	supervisor    *supervisor.Supervisor
 	metricsClient metrics.Client
 	apiServer     *manners.GracefulServer
-	backend       backend.Backend
+	ng            engine.Engine
 }
 
 func NewService(options Options, registry *plugin.Registry) *Service {
@@ -88,12 +88,12 @@ func (s *Service) Start() error {
 		return err
 	}
 
-	if err := s.newBackend(); err != nil {
+	if err := s.newEngine(); err != nil {
 		return err
 	}
 
-	s.supervisor = supervisor.NewSupervisorWithOptions(
-		s.newServer, s.backend, s.errorC, supervisor.Options{Files: muxFiles})
+	s.supervisor = supervisor.New(
+		s.newProxy, s.ng, s.errorC, supervisor.Options{Files: muxFiles})
 
 	// Tells configurator to perform initial proxy configuration and start watching changes
 	if err := s.supervisor.Start(); err != nil {
@@ -149,7 +149,7 @@ func (s *Service) Start() error {
 	}
 }
 
-func (s *Service) getFiles() (*server.FileDescriptor, []*server.FileDescriptor, error) {
+func (s *Service) getFiles() (*proxy.FileDescriptor, []*proxy.FileDescriptor, error) {
 	// These files may be passed in by the parent process
 	filesString := os.Getenv(vulcandFilesKey)
 	if filesString == "" {
@@ -168,7 +168,7 @@ func (s *Service) getFiles() (*server.FileDescriptor, []*server.FileDescriptor, 
 	return s.splitFiles(files)
 }
 
-func (s *Service) splitFiles(files []*server.FileDescriptor) (*server.FileDescriptor, []*server.FileDescriptor, error) {
+func (s *Service) splitFiles(files []*proxy.FileDescriptor) (*proxy.FileDescriptor, []*proxy.FileDescriptor, error) {
 	apiAddr := fmt.Sprintf("%s:%d", s.options.ApiInterface, s.options.ApiPort)
 	for i, f := range files {
 		if f.Address.Address == apiAddr {
@@ -233,7 +233,7 @@ func (s *Service) startChild() error {
 	return nil
 }
 
-func (s *Service) GetAPIFile() (*server.FileDescriptor, error) {
+func (s *Service) GetAPIFile() (*proxy.FileDescriptor, error) {
 	file, err := s.apiServer.GetFile()
 	if err != nil {
 		return nil, err
@@ -256,12 +256,12 @@ func (s *Service) newBox() (*secret.Box, error) {
 	return secret.NewBox(key)
 }
 
-func (s *Service) newBackend() error {
+func (s *Service) newEngine() error {
 	box, err := s.newBox()
 	if err != nil {
 		return err
 	}
-	b, err := etcdbackend.NewEtcdBackendWithOptions(
+	b, err := etcdng.New(
 		s.registry, s.options.EtcdNodes, s.options.EtcdKey,
 		etcdbackend.Options{
 			EtcdConsistency: s.options.EtcdConsistency,
@@ -288,7 +288,7 @@ func (s *Service) reportSystemMetrics() {
 	}
 }
 
-func (s *Service) newServer(id int) (server.Server, error) {
+func (s *Service) newProxy(id int) (proxy.Proxy, error) {
 	return server.NewMuxServerWithOptions(id, server.Options{
 		MetricsClient:  s.metricsClient,
 		DialTimeout:    s.options.EndpointDialTimeout,
@@ -312,7 +312,7 @@ func (s *Service) initApi() error {
 	return nil
 }
 
-func (s *Service) startApi(file *server.FileDescriptor) error {
+func (s *Service) startApi(file *proxy.FileDescriptor) error {
 	addr := fmt.Sprintf("%s:%d", s.options.ApiInterface, s.options.ApiPort)
 
 	server := &http.Server{
@@ -348,13 +348,13 @@ func execPath() (string, error) {
 }
 
 type fileDescriptor struct {
-	Address  backend.Address
+	Address  engine.Address
 	FileFD   int
 	FileName string
 }
 
 // filesToString serializes file descriptors as well as accompanying information (like socket host and port)
-func filesToString(files []*server.FileDescriptor) (string, error) {
+func filesToString(files []*proxy.FileDescriptor) (string, error) {
 	out := make([]fileDescriptor, len(files))
 	for i, f := range files {
 		out[i] = fileDescriptor{
@@ -374,7 +374,7 @@ func filesToString(files []*server.FileDescriptor) (string, error) {
 }
 
 // filesFromString de-serializes the file descriptors and turns them in the os.Files
-func filesFromString(in string) ([]*server.FileDescriptor, error) {
+func filesFromString(in string) ([]*proxy.FileDescriptor, error) {
 	var out []fileDescriptor
 	if err := json.Unmarshal([]byte(in), &out); err != nil {
 		return nil, err

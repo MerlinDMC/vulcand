@@ -9,7 +9,7 @@ import (
 
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/codegangsta/cli"
 	"github.com/mailgun/vulcand/api"
-	"github.com/mailgun/vulcand/backend"
+	"github.com/mailgun/vulcand/engine"
 	"github.com/mailgun/vulcand/plugin"
 	"github.com/mailgun/vulcand/secret"
 )
@@ -46,9 +46,9 @@ func (cmd *Command) Run(args []string) error {
 		NewKeyCommand(cmd),
 		NewTopCommand(cmd),
 		NewHostCommand(cmd),
-		NewUpstreamCommand(cmd),
-		NewLocationCommand(cmd),
-		NewEndpointCommand(cmd),
+		NewBackendCommand(cmd),
+		NewFrontendCommand(cmd),
+		NewServerCommand(cmd),
 		NewListenerCommand(cmd),
 	}
 	app.Commands = append(app.Commands, NewMiddlewareCommands(cmd)...)
@@ -85,7 +85,7 @@ func flags() []cli.Flag {
 	}
 }
 
-func readKeyPair(certPath, keyPath string) (*backend.KeyPair, error) {
+func readKeyPair(certPath, keyPath string) (*engine.KeyPair, error) {
 	fKey, err := os.Open(keyPath)
 	if err != nil {
 		return nil, err
@@ -105,7 +105,7 @@ func readKeyPair(certPath, keyPath string) (*backend.KeyPair, error) {
 	if err != nil {
 		return nil, err
 	}
-	return backend.NewKeyPair(cert, key)
+	return engine.NewKeyPair(cert, key)
 }
 
 func readBox(key string) (*secret.Box, error) {

@@ -395,7 +395,7 @@ type LatencyBrackets []Bracket
 
 func (l LatencyBrackets) GetQuantile(q float64) (*Bracket, error) {
 	if len(l) == 0 {
-		return nil, fmt.Errorf("quantile %f not found", q)
+		return nil, fmt.Errorf("quantile %f not found in %v", q, l)
 	}
 	for _, b := range l {
 		if b.Quantile == q {

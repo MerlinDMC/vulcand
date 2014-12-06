@@ -10,15 +10,17 @@ import (
 
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/log"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/scroll"
-	. "github.com/mailgun/vulcand/Godeps/_workspace/src/gopkg.in/check.v1"
+
 	"github.com/mailgun/vulcand/api"
-	. "github.com/mailgun/vulcand/backend"
-	"github.com/mailgun/vulcand/backend/membackend"
+	"github.com/mailgun/vulcand/engine"
+	"github.com/mailgun/vulcand/engine/memng"
 	"github.com/mailgun/vulcand/plugin/registry"
+	"github.com/mailgun/vulcand/proxy"
 	"github.com/mailgun/vulcand/secret"
-	"github.com/mailgun/vulcand/server"
 	"github.com/mailgun/vulcand/supervisor"
 	"github.com/mailgun/vulcand/testutils"
+
+	. "github.com/mailgun/vulcand/Godeps/_workspace/src/gopkg.in/check.v1"
 )
 
 const OK = ".*OK.*"
@@ -26,7 +28,7 @@ const OK = ".*OK.*"
 func TestVulcanCommandLineTool(t *testing.T) { TestingT(t) }
 
 type CmdSuite struct {
-	backend    Backend
+	ng         engine.Engine
 	out        *bytes.Buffer
 	cmd        *Command
 	testServer *httptest.Server

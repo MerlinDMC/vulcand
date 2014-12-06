@@ -9,48 +9,47 @@ import (
 
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/buger/goterm"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/log"
-	"github.com/mailgun/vulcand/backend"
+	"github.com/mailgun/vulcand/engine"
 )
 
-func locationsOverview(locations []*backend.Location) string {
+func frontendsOverview(frontends []engine.Frontend) string {
 	t := goterm.NewTable(0, 10, 5, ' ', 0)
 	fmt.Fprint(t, "Id\tHostname\tPath\tReqs/sec\t95ile [ms]\t99ile [ms]\tStatus codes %%%%\tNet. errors %%%%\n")
 
-	if len(locations) == 0 {
+	if len(frontends) == 0 {
 		return t.String()
 	}
-	for _, l := range locations {
-		locationOverview(t, l)
+	for _, l := range frontends {
+		frontendOverview(t, l)
 	}
 	return t.String()
 }
 
-func endpointsOverview(endpoints []*backend.Endpoint) string {
+func serversOverview(servers []engine.Server) string {
 	t := goterm.NewTable(0, 10, 5, ' ', 0)
 	fmt.Fprint(t, "UpstreamId\tId\tUrl\tReqs/sec\t95ile [ms]\t99ile [ms]\tStatus codes %%%%\tNet. errors %%%%\tAnomalies\n")
 
-	for _, e := range endpoints {
+	for _, e := range servers {
 		endpointOverview(t, e)
 	}
 	return t.String()
 }
 
-func locationOverview(w io.Writer, l *backend.Location) {
+func frontendOverview(w io.Writer, l engine.Frontend) {
 	s := l.Stats
 
-	fmt.Fprintf(w, "%s\t%s\t%s\t%0.1f\t%0.3f\t%0.3f\t%s\t%s\n",
+	fmt.Fprintf(w, "%s\t%s\t%0.1f\t%0.3f\t%0.3f\t%s\t%s\n",
 		l.Id,
-		l.Hostname,
-		l.Path,
+		l.HTTPSettings().Route,
 		s.RequestsPerSecond(),
-		latencyAtQuantile(95.0, &s),
-		latencyAtQuantile(99.0, &s),
-		statusCodesToString(&s),
+		latencyAtQuantile(95.0, s),
+		latencyAtQuantile(99.0, s),
+		statusCodesToString(s),
 		errRatioToString(s.NetErrorRatio()),
 	)
 }
 
-func endpointOverview(w io.Writer, e *backend.Endpoint) {
+func endpointOverview(w io.Writer, e *engine.Server) {
 	s := e.Stats
 
 	anomalies := ""
@@ -70,7 +69,7 @@ func endpointOverview(w io.Writer, e *backend.Endpoint) {
 		anomalies)
 }
 
-func latencyAtQuantile(q float64, s *backend.RoundTripStats) float64 {
+func latencyAtQuantile(q float64, s *engine.RoundTripStats) float64 {
 	v, err := s.LatencyBrackets.GetQuantile(q)
 	if err != nil {
 		log.Errorf("Failed to get latency %f from %v, err: %v", q, s, err)
@@ -88,7 +87,7 @@ func errRatioToString(r float64) string {
 	}
 }
 
-func statusCodesToString(s *backend.RoundTripStats) string {
+func statusCodesToString(s *engine.RoundTripStats) string {
 	if s.Counters.Total == 0 {
 		return ""
 	}
@@ -115,7 +114,7 @@ func getColor(code int) int {
 }
 
 type codeSorter struct {
-	codes []backend.StatusCode
+	codes []engine.StatusCode
 }
 
 func (c *codeSorter) Len() int {

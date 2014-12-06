@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/codegangsta/cli"
+
+	"github.com/mailgun/vulcand/engine"
 )
 
 func NewHostCommand(cmd *Command) cli.Command {
@@ -26,12 +28,14 @@ func NewHostCommand(cmd *Command) cli.Command {
 				Action: cmd.printHostAction,
 			},
 			{
-				Name: "add",
+				Name: "upsert",
 				Flags: []cli.Flag{
 					cli.StringFlag{Name: "name", Usage: "hostname"},
+					cli.StringFlag{Name: "privateKey", Usage: "Path to a private key"},
+					cli.StringFlag{Name: "cert", Usage: "Path to a certificate"},
 				},
-				Usage:  "Add a new host to vulcan proxy",
-				Action: cmd.addHostAction,
+				Usage:  "Update or insert a new host to vulcan proxy",
+				Action: cmd.upsertHostAction,
 			},
 			{
 				Name: "rm",
@@ -40,16 +44,6 @@ func NewHostCommand(cmd *Command) cli.Command {
 				},
 				Usage:  "Remove a host from vulcan",
 				Action: cmd.deleteHostAction,
-			},
-			{
-				Name: "set_keypair",
-				Flags: []cli.Flag{
-					cli.StringFlag{Name: "name", Usage: "hostname"},
-					cli.StringFlag{Name: "privateKey", Usage: "Path to a private key"},
-					cli.StringFlag{Name: "cert", Usage: "Path to a certificate"},
-				},
-				Usage:  "Set host key pair",
-				Action: cmd.updateHostKeyPairAction,
 			},
 		},
 	}
@@ -65,7 +59,7 @@ func (cmd *Command) printHostsAction(c *cli.Context) {
 }
 
 func (cmd *Command) printHostAction(c *cli.Context) {
-	host, err := cmd.client.GetHost(c.String("name"))
+	host, err := cmd.client.GetHost(engine.HostKey{Name: c.String("name")})
 	if err != nil {
 		cmd.printError(err)
 		return
@@ -73,22 +67,32 @@ func (cmd *Command) printHostAction(c *cli.Context) {
 	cmd.printHost(host)
 }
 
-func (cmd *Command) addHostAction(c *cli.Context) {
-	host, err := cmd.client.AddHost(c.String("name"))
-	cmd.printResult("%s added", host, err)
-}
-
-func (cmd *Command) updateHostKeyPairAction(c *cli.Context) {
-	keyPair, err := readKeyPair(c.String("cert"), c.String("privateKey"))
+func (cmd *Command) upsertHostAction(c *cli.Context) {
+	host, err := engine.NewHost(c.String("name"), engine.HostOptions{})
 	if err != nil {
-		cmd.printError(fmt.Errorf("failed to read key pair: %s", err))
+		cmd.printError(err)
 		return
 	}
+	if c.String("cert") != "" || c.String("privateKey") != "" {
+		keyPair, err := readKeyPair(c.String("cert"), c.String("privateKey"))
+		if err != nil {
+			cmd.printError(fmt.Errorf("failed to read key pair: %s", err))
+			return
+		}
+		host.Options.KeyPair = keyPair
+	}
 
-	host, err := cmd.client.UpdateHostKeyPair(c.String("name"), keyPair)
-	cmd.printResult("%s key pair updated", host, err)
+	if err := cmd.client.UpsertHost(*host); err != nil {
+		cmd.printError(err)
+		return
+	}
+	cmd.printOk("host added")
 }
 
 func (cmd *Command) deleteHostAction(c *cli.Context) {
-	cmd.printStatus(cmd.client.DeleteHost(c.String("name")))
+	if err := cmd.client.DeleteHost(engine.HostKey{Name: c.String("name")}); err != nil {
+		cmd.printError(err)
+		return
+	}
+	cmd.printOk("host deleted")
 }

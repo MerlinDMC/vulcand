@@ -26,12 +26,19 @@ func MarkServerAnomalies(servers []engine.Server) error {
 	if len(servers) == 0 {
 		return nil
 	}
-
 	stats := make([]engine.RoundTripStats, len(servers))
-	for i, s := range servers {
-		stats[i] = *s.Stats
+	for i := range servers {
+		stats[i] = *servers[i].Stats
 	}
-	return MarkAnomalies(stats)
+
+	if err := MarkAnomalies(stats); err != nil {
+		return err
+	}
+
+	for i := range stats {
+		servers[i].Stats = &stats[i]
+	}
+	return nil
 }
 
 // MarkAnomalies takes the list of stats and marks anomalies detected within this group by updating
@@ -56,10 +63,10 @@ func markNetErrorRates(stats []engine.RoundTripStats) error {
 	}
 
 	_, bad := metrics.SplitRatios(errRates)
-	for _, s := range stats {
-		if bad[s.NetErrorRatio()] {
-			s.Verdict.IsBad = true
-			s.Verdict.Anomalies = append(s.Verdict.Anomalies, engine.Anomaly{Code: CodeNetErrorRate, Message: MessageNetErrRate})
+	for i := range stats {
+		if bad[stats[i].NetErrorRatio()] {
+			stats[i].Verdict.IsBad = true
+			stats[i].Verdict.Anomalies = append(stats[i].Verdict.Anomalies, engine.Anomaly{Code: CodeNetErrorRate, Message: MessageNetErrRate})
 		}
 	}
 	return nil
@@ -82,11 +89,11 @@ func markLatency(index int, stats []engine.RoundTripStats) error {
 
 	quantile := stats[0].LatencyBrackets[index].Quantile
 	_, bad := metrics.SplitLatencies(quantiles, time.Millisecond)
-	for _, s := range stats {
+	for i, s := range stats {
 		if bad[s.LatencyBrackets[index].Value] {
-			s.Verdict.IsBad = true
-			s.Verdict.Anomalies = append(
-				s.Verdict.Anomalies,
+			stats[i].Verdict.IsBad = true
+			stats[i].Verdict.Anomalies = append(
+				stats[i].Verdict.Anomalies,
 				engine.Anomaly{
 					Code:    CodeLatency,
 					Message: fmt.Sprintf(MessageLatency, quantile),
@@ -103,11 +110,11 @@ func markAppErrorRates(stats []engine.RoundTripStats) error {
 	}
 
 	_, bad := metrics.SplitRatios(errRates)
-	for _, s := range stats {
+	for i, s := range stats {
 		if bad[s.AppErrorRatio()] {
-			s.Verdict.IsBad = true
-			s.Verdict.Anomalies = append(
-				s.Verdict.Anomalies, engine.Anomaly{Code: CodeAppErrorRate, Message: MessageAppErrRate})
+			stats[i].Verdict.IsBad = true
+			stats[i].Verdict.Anomalies = append(
+				stats[i].Verdict.Anomalies, engine.Anomaly{Code: CodeAppErrorRate, Message: MessageAppErrRate})
 		}
 	}
 	return nil
