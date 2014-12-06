@@ -85,7 +85,7 @@ func (n *ng) GetHosts() ([]engine.Host, error) {
 }
 
 func (n *ng) GetHost(key engine.HostKey) (*engine.Host, error) {
-	hostKey := n.path("hosts", key.Name, "settings")
+	hostKey := n.path("hosts", key.Name, "host")
 
 	var host *host
 	err := n.getJSONVal(hostKey, &host)
@@ -104,7 +104,7 @@ func (n *ng) GetHost(key engine.HostKey) (*engine.Host, error) {
 }
 
 func (n *ng) UpsertHost(h engine.Host) error {
-	hostKey := n.path("hosts", h.Name, "settings")
+	hostKey := n.path("hosts", h.Name, "host")
 
 	val := host{
 		Name: h.Name,
@@ -168,7 +168,7 @@ func (n *ng) UpsertFrontend(f engine.Frontend, ttl time.Duration) error {
 	if _, err := n.GetBackend(engine.BackendKey{Id: f.BackendId}); err != nil {
 		return err
 	}
-	if err := n.setJSONVal(n.path("frontends", f.Id, "settings"), f, noTTL); err != nil {
+	if err := n.setJSONVal(n.path("frontends", f.Id, "frontend"), f, noTTL); err != nil {
 		return err
 	}
 	if ttl == 0 {
@@ -195,7 +195,7 @@ func (n *ng) GetFrontends() ([]engine.Frontend, error) {
 }
 
 func (n *ng) GetFrontend(key engine.FrontendKey) (*engine.Frontend, error) {
-	frontendKey := n.path("frontends", key.Id, "settings")
+	frontendKey := n.path("frontends", key.Id, "frontend")
 
 	bytes, err := n.getVal(frontendKey)
 	if err != nil {
@@ -225,7 +225,7 @@ func (n *ng) GetBackends() ([]engine.Backend, error) {
 }
 
 func (n *ng) GetBackend(key engine.BackendKey) (*engine.Backend, error) {
-	backendKey := n.path("backends", key.Id, "settings")
+	backendKey := n.path("backends", key.Id, "backend")
 
 	bytes, err := n.getVal(backendKey)
 	if err != nil {
@@ -235,7 +235,7 @@ func (n *ng) GetBackend(key engine.BackendKey) (*engine.Backend, error) {
 }
 
 func (n *ng) UpsertBackend(b engine.Backend) error {
-	return n.setJSONVal(n.path("backends", b.Id, "settings"), b, noTTL)
+	return n.setJSONVal(n.path("backends", b.Id, "backend"), b, noTTL)
 }
 
 func (n *ng) DeleteBackend(bk engine.BackendKey) error {
@@ -426,7 +426,7 @@ func (s *ng) parseChange(response *etcd.Response) (interface{}, error) {
 }
 
 func (n *ng) parseHostChange(r *etcd.Response) (interface{}, error) {
-	out := regexp.MustCompile("/hosts/([^/]+)(?:/settings)?$").FindStringSubmatch(r.Node.Key)
+	out := regexp.MustCompile("/hosts/([^/]+)(?:/host)?$").FindStringSubmatch(r.Node.Key)
 	if len(out) != 2 {
 		return nil, nil
 	}
@@ -476,7 +476,7 @@ func (n *ng) parseListenerChange(r *etcd.Response) (interface{}, error) {
 }
 
 func (n *ng) parseFrontendChange(r *etcd.Response) (interface{}, error) {
-	out := regexp.MustCompile("/frontends/([^/]+)(?:/settings)?$").FindStringSubmatch(r.Node.Key)
+	out := regexp.MustCompile("/frontends/([^/]+)(?:/frontend)?$").FindStringSubmatch(r.Node.Key)
 	if len(out) != 2 {
 		return nil, nil
 	}
@@ -528,7 +528,7 @@ func (s *ng) parseFrontendMiddlewareChange(r *etcd.Response) (interface{}, error
 }
 
 func (n *ng) parseBackendChange(r *etcd.Response) (interface{}, error) {
-	out := regexp.MustCompile("/backends/([^/]+)(?:/settings)?$").FindStringSubmatch(r.Node.Key)
+	out := regexp.MustCompile("/backends/([^/]+)(?:/backend)?$").FindStringSubmatch(r.Node.Key)
 	if len(out) != 2 {
 		return nil, nil
 	}

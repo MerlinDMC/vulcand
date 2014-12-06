@@ -146,9 +146,9 @@ func (s *VESuite) TestFrontendCRUD(c *C) {
 	c.Assert(err, IsNil)
 
 	// Add frontend
-	fId, route := "fr1", "Path(`/path`)"
-	_, err = s.client.Set(s.path("frontends", fId, "settings"),
-		fmt.Sprintf(`{"Type": "http", "BackendId": "%v", "Settings": {"Route": "%s"}}`, b, route), 0)
+	fId := "fr1"
+	_, err = s.client.Set(s.path("frontends", fId, "frontend"),
+		`{"Type": "http", "BackendId": "bk1", "Route": "Path(\"/path\")"}`, 0)
 	c.Assert(err, IsNil)
 
 	time.Sleep(time.Second)

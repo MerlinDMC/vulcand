@@ -145,17 +145,16 @@ func FrontendFromJSON(in []byte, id ...string) (*Frontend, error) {
 	if rf.Type != HTTP {
 		return nil, fmt.Errorf("Unsupported frontend type: %v", rf.Type)
 	}
-	var s *HTTPFrontendSettings
-	if err := json.Unmarshal(rf.Settings, &s); err != nil {
-		return nil, err
-	}
-	if s == nil {
-		s = &HTTPFrontendSettings{}
+	var s HTTPFrontendSettings
+	if rf.Settings != nil {
+		if err := json.Unmarshal(rf.Settings, &s); err != nil {
+			return nil, err
+		}
 	}
 	if len(id) != 0 {
 		rf.Id = id[0]
 	}
-	f, err := NewHTTPFrontend(rf.Id, rf.BackendId, rf.Route, *s)
+	f, err := NewHTTPFrontend(rf.Id, rf.BackendId, rf.Route, s)
 	if err != nil {
 		return nil, err
 	}
@@ -216,17 +215,16 @@ func BackendFromJSON(in []byte, id ...string) (*Backend, error) {
 		return nil, fmt.Errorf("Unsupported backend type %v", rb.Type)
 	}
 
-	var s *HTTPBackendSettings
-	if err := json.Unmarshal(rb.Settings, &s); err != nil {
-		return nil, err
-	}
-	if s == nil {
-		s = &HTTPBackendSettings{}
+	var s HTTPBackendSettings
+	if rb.Settings != nil {
+		if err := json.Unmarshal(rb.Settings, &s); err != nil {
+			return nil, err
+		}
 	}
 	if len(id) != 0 {
 		rb.Id = id[0]
 	}
-	b, err := NewHTTPBackend(rb.Id, *s)
+	b, err := NewHTTPBackend(rb.Id, s)
 	if err != nil {
 		return nil, err
 	}
