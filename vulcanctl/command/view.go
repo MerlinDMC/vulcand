@@ -13,12 +13,12 @@ func hostsView(hs []engine.Host) *StringTree {
 		Node: "[hosts]",
 	}
 	for _, h := range hs {
-		r.AddChild(hostView(h))
+		r.AddChild(hostView(&h))
 	}
 	return r
 }
 
-func hostView(h engine.Host) *StringTree {
+func hostView(h *engine.Host) *StringTree {
 	host := &StringTree{
 		Node: fmt.Sprintf("host[%s]", h.Name),
 	}
@@ -33,32 +33,34 @@ func listenersView(ls []engine.Listener) *StringTree {
 		return r
 	}
 	for _, l := range ls {
-		r.AddChild(
-			&StringTree{
-				Node: fmt.Sprintf("listener[%s, %s, %s://%s]", l.Id, l.Protocol, l.Address.Network, l.Address.Address),
-			})
+		r.AddChild(listenerView(&l))
 	}
 	return r
 }
 
-func frontendsView(ls []engine.Frontend) *StringTree {
+func listenerView(l *engine.Listener) *StringTree {
+	return &StringTree{
+		Node: fmt.Sprintf("listener[%s, %s, %s://%s]", l.Id, l.Protocol, l.Address.Network, l.Address.Address),
+	}
+}
+
+func frontendsView(fs []engine.Frontend) *StringTree {
 	r := &StringTree{
 		Node: "[frontends]",
 	}
-	if len(ls) == 0 {
+	if len(fs) == 0 {
 		return r
 	}
-	for _, l := range ls {
-		r.AddChild(frontendView(l))
+	for _, f := range fs {
+		r.AddChild(frontendView(&f))
 	}
 	return r
 }
 
-func frontendView(l engine.Frontend) *StringTree {
+func frontendView(f *engine.Frontend) *StringTree {
 	return &StringTree{
-		Node: fmt.Sprintf("frontend[%s, %s]", l.Id, l.Route),
+		Node: fmt.Sprintf("frontend[%s, %s]", f.Id, f.HTTPSettings().Route),
 	}
-	return r
 }
 
 func backendsView(bs []engine.Backend) *StringTree {
@@ -66,23 +68,28 @@ func backendsView(bs []engine.Backend) *StringTree {
 		Node: "[backends]",
 	}
 	for _, b := range bs {
-		r.AddChild(backendView(b))
+		r.AddChild(backendView(&b))
 	}
 	return r
 }
 
-func backendView(b engine.Backend) *StringTree {
-	r := &StringTree{
+func backendView(b *engine.Backend) *StringTree {
+	return &StringTree{
 		Node: fmt.Sprintf("backend[%s]", b.Id),
 	}
+}
 
-	for _, s := range b.Servers {
-		r.AddChild(serverView(s))
+func serversView(srvs []engine.Server) *StringTree {
+	r := &StringTree{
+		Node: "[servers]",
+	}
+	for _, s := range srvs {
+		r.AddChild(serverView(&s))
 	}
 	return r
 }
 
-func serverView(s engine.Server) *StringTree {
+func serverView(s *engine.Server) *StringTree {
 	return &StringTree{
 		Node: fmt.Sprintf("server[%s, %s]", s.Id, s.URL),
 	}

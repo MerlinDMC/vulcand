@@ -32,6 +32,7 @@ type CmdSuite struct {
 	out        *bytes.Buffer
 	cmd        *Command
 	testServer *httptest.Server
+	sv         *supervisor.Supervisor
 }
 
 var _ = Suite(&CmdSuite{})
@@ -41,20 +42,26 @@ func (s *CmdSuite) SetUpSuite(c *C) {
 }
 
 func (s *CmdSuite) SetUpTest(c *C) {
-	s.backend = membackend.NewMemBackend(registry.GetRegistry())
+	s.ng = memng.New(registry.GetRegistry())
 
-	newServer := func(id int) (server.Server, error) {
-		return server.NewMuxServerWithOptions(id, server.Options{})
+	newProxy := func(id int) (proxy.Proxy, error) {
+		return proxy.New(id, proxy.Options{})
 	}
 
-	sv := supervisor.NewSupervisor(newServer, s.backend, make(chan error))
+	sv := supervisor.New(newProxy, s.ng, make(chan error), supervisor.Options{})
+	sv.Start()
+	s.sv = sv
 
 	app := scroll.NewApp()
-	api.InitProxyController(s.backend, sv, app)
+	api.InitProxyController(s.ng, sv, app)
 	s.testServer = httptest.NewServer(app.GetHandler())
 
 	s.out = &bytes.Buffer{}
 	s.cmd = &Command{registry: registry.GetRegistry(), out: s.out, vulcanUrl: s.testServer.URL}
+}
+
+func (s *CmdSuite) TearDownTest(c *C) {
+	s.sv.Stop(true)
 }
 
 func (s *CmdSuite) runString(in string) string {
@@ -72,44 +79,60 @@ func (s *CmdSuite) run(params ...string) string {
 }
 
 func (s *CmdSuite) TestStatus(c *C) {
-	c.Assert(s.run("top", "--refresh", "0"), Matches, ".*Hostname.*")
+	c.Assert(s.run("top", "--refresh", "0"), Matches, ".*Frontend.*")
 }
 
 func (s *CmdSuite) TestHostCRUD(c *C) {
 	host := "localhost"
-	c.Assert(s.run("host", "add", "-name", host), Matches, OK)
+	c.Assert(s.run("host", "upsert", "-name", host), Matches, OK)
+
+	keyPair := testutils.NewTestKeyPair()
+
+	fKey, err := ioutil.TempFile("", "vulcand")
+	c.Assert(err, IsNil)
+	defer fKey.Close()
+	fKey.Write(keyPair.Key)
+
+	fCert, err := ioutil.TempFile("", "vulcand")
+	c.Assert(err, IsNil)
+	defer fCert.Close()
+	fCert.Write(keyPair.Cert)
+
+	c.Assert(s.run("host", "upsert", "-name", host, "-privateKey", fKey.Name(), "-cert", fCert.Name()), Matches, OK)
+
+	h, err := s.ng.GetHost(engine.HostKey{Name: host})
+	c.Assert(err, IsNil)
+	c.Assert(h.Options.KeyPair, DeepEquals, keyPair)
+
 	c.Assert(s.run("host", "show", "-name", host), Matches, ".*"+host+".*")
 	c.Assert(s.run("host", "rm", "-name", host), Matches, OK)
 }
 
 func (s *CmdSuite) TestLogSeverity(c *C) {
 	for _, sev := range []log.Severity{log.SeverityInfo, log.SeverityWarn, log.SeverityError} {
-		c.Assert(s.run("log", "set_severity", "-s", sev.String()), Matches, fmt.Sprintf(".*%v.*", sev))
+		c.Assert(s.run("log", "set_severity", "-s", sev.String()), Matches, ".*updated.*")
 		c.Assert(s.run("log", "get_severity"), Matches, fmt.Sprintf(".*%v.*", sev))
 	}
 }
 
-func (s *CmdSuite) TestHostListenerCRUD(c *C) {
+func (s *CmdSuite) TestListenerCRUD(c *C) {
 	host := "host"
-	c.Assert(s.run("host", "add", "-name", host), Matches, OK)
+	c.Assert(s.run("host", "upsert", "-name", host), Matches, OK)
 	l := "l1"
-	c.Assert(s.run("listener", "add", "-host", host, "-id", l, "-proto", "http", "-addr", "localhost:11300"), Matches, OK)
-	c.Assert(s.run("listener", "rm", "-host", host, "-id", l), Matches, OK)
-	c.Assert(s.run("host", "rm", "-name", host), Matches, OK)
+	c.Assert(s.run("listener", "upsert", "-id", l, "-proto", "http", "-addr", "localhost:11300"), Matches, OK)
+	c.Assert(s.run("listener", "ls"), Matches, fmt.Sprintf(".*%v.*", "http"))
+	c.Assert(s.run("listener", "show", "-id", l), Matches, fmt.Sprintf(".*%v.*", "http"))
+	c.Assert(s.run("listener", "rm", "-id", l), Matches, OK)
 }
 
-func (s *CmdSuite) TestUpstreamCRUD(c *C) {
-	up := "up"
-	c.Assert(s.run("upstream", "add", "-id", up), Matches, OK)
-	c.Assert(s.run("upstream", "rm", "-id", up), Matches, OK)
-	c.Assert(s.run("upstream", "ls"), Matches, fmt.Sprintf(".*%s.*", up))
-}
+func (s *CmdSuite) TestBackendCRUD(c *C) {
+	b := "bk1"
+	c.Assert(s.run("backend", "upsert", "-id", b), Matches, OK)
+	c.Assert(s.run("backend", "ls"), Matches, fmt.Sprintf(".*%s.*", b))
 
-func (s *CmdSuite) TestUpstreamOptions(c *C) {
-	up := "up1"
 	c.Assert(s.run(
-		"upstream", "add",
-		"-id", up,
+		"backend", "upsert",
+		"-id", b,
 		// Timeouts
 		"-readTimeout", "1s", "-dialTimeout", "2s", "-handshakeTimeout", "3s",
 		// Keep Alive parameters
@@ -117,84 +140,47 @@ func (s *CmdSuite) TestUpstreamOptions(c *C) {
 	),
 		Matches, OK)
 
-	u, err := s.backend.GetUpstream(up)
+	val, err := s.ng.GetBackend(engine.BackendKey{Id: b})
 	c.Assert(err, IsNil)
-	c.Assert(u.Options.Timeouts.Read, Equals, "1s")
-	c.Assert(u.Options.Timeouts.Dial, Equals, "2s")
-	c.Assert(u.Options.Timeouts.TlsHandshake, Equals, "3s")
+	o := val.HTTPSettings()
 
-	c.Assert(u.Options.KeepAlive.Period, Equals, "4s")
-	c.Assert(u.Options.KeepAlive.MaxIdleConnsPerHost, Equals, 5)
+	c.Assert(o.Timeouts.Read, Equals, "1s")
+	c.Assert(o.Timeouts.Dial, Equals, "2s")
+	c.Assert(o.Timeouts.TLSHandshake, Equals, "3s")
+
+	c.Assert(o.KeepAlive.Period, Equals, "4s")
+	c.Assert(o.KeepAlive.MaxIdleConnsPerHost, Equals, 5)
+
+	c.Assert(s.run("backend", "rm", "-id", b), Matches, OK)
 }
 
-func (s *CmdSuite) TestUpstreamUpdateOptions(c *C) {
-	up := "up1"
-	c.Assert(s.run("upstream", "add", "-id", up), Matches, OK)
-	s.run("upstream", "set_options", "-id", up, "-dialTimeout", "20s")
+func (s *CmdSuite) TestServerCRUD(c *C) {
+	b := "bk1"
+	c.Assert(s.run("backend", "upsert", "-id", b), Matches, OK)
+	srv := "srv1"
+	c.Assert(s.run("server", "upsert", "-id", srv, "-url", "http://localhost:5000", "-b", b), Matches, OK)
 
-	u, err := s.backend.GetUpstream(up)
-	c.Assert(err, IsNil)
-	c.Assert(u.Options.Timeouts.Dial, Equals, "20s")
+	c.Assert(s.run("server", "ls", "-b", b), Matches, fmt.Sprintf(".*%v.*", "http://localhost:5000"))
+	c.Assert(s.run("server", "show", "-id", srv, "-b", b), Matches, fmt.Sprintf(".*%v.*", "http://localhost:5000"))
+
+	c.Assert(s.run("server", "rm", "-id", srv, "-b", b), Matches, OK)
+	c.Assert(s.run("backend", "rm", "-id", b), Matches, OK)
 }
 
-func (s *CmdSuite) TestUpstreamAutoId(c *C) {
-	c.Assert(s.run("upstream", "add"), Matches, OK)
-}
+func (s *CmdSuite) TestFrontendCRUD(c *C) {
+	b := "bk1"
+	c.Assert(s.run("backend", "upsert", "-id", b), Matches, OK)
 
-func (s *CmdSuite) TestEndpointCRUD(c *C) {
-	up := "up"
-	c.Assert(s.run("upstream", "add", "-id", up), Matches, OK)
-	e := "e"
-	c.Assert(s.run("endpoint", "add", "-id", e, "-url", "http://localhost:5000", "-up", up), Matches, OK)
-
-	c.Assert(s.run("endpoint", "rm", "-id", e, "-up", up), Matches, OK)
-	c.Assert(s.run("upstream", "rm", "-id", up), Matches, OK)
-}
-
-func (s *CmdSuite) TestLimitsCRUD(c *C) {
-	// Create upstream with this location
-	up := "up"
-	c.Assert(s.run("upstream", "add", "-id", up), Matches, OK)
-
-	h := "h"
-	c.Assert(s.run("host", "add", "-name", h), Matches, OK)
-
-	loc := "loc"
-	path := "/path"
-	c.Assert(s.run("location", "add", "-host", h, "-id", loc, "-up", up, "-path", path), Matches, OK)
-
-	rl := "rl"
-	c.Assert(s.run("ratelimit", "add", "-host", h, "-loc", loc, "-id", rl, "-requests", "10", "-variable", "client.ip", "-period", "3"), Matches, OK)
-	c.Assert(s.run("ratelimit", "update", "-host", h, "-loc", loc, "-id", rl, "-requests", "100", "-variable", "client.ip", "-period", "30"), Matches, OK)
-	c.Assert(s.run("ratelimit", "rm", "-host", h, "-loc", loc, "-id", rl), Matches, OK)
-
-	cl := "cl"
-	c.Assert(s.run("connlimit", "add", "-host", h, "-loc", loc, "-id", cl, "-connections", "10", "-variable", "client.ip"), Matches, OK)
-	c.Assert(s.run("connlimit", "update", "-host", h, "-loc", loc, "-id", cl, "-connections", "100", "-variable", "client.ip"), Matches, OK)
-	c.Assert(s.run("connlimit", "rm", "-host", h, "-loc", loc, "-id", cl), Matches, OK)
-
-	c.Assert(s.run("location", "rm", "-host", h, "-id", loc), Matches, OK)
-	c.Assert(s.run("host", "rm", "-name", h), Matches, OK)
-	c.Assert(s.run("upstream", "rm", "-id", up), Matches, OK)
-}
-
-func (s *CmdSuite) TestLocationOptions(c *C) {
-	up := "up"
-	c.Assert(s.run("upstream", "add", "-id", up), Matches, OK)
-
-	h := "h"
-	c.Assert(s.run("host", "add", "-name", h), Matches, OK)
-
-	loc := "loc"
-	path := "/path"
+	f := "fr1"
+	route := `Path("/path")`
 	c.Assert(s.run(
-		"location", "add",
-		"-host", h, "-id", loc, "-up", up, "-path", path,
+		"frontend", "upsert",
+		"-id", f, "-b", b, "-route", route,
 		// Limits
 		"-maxMemBodyKB", "6", "-maxBodyKB", "7",
 		// Misc parameters
 		// Failover predicate
-		"-failoverPredicate", "IsNetworkError",
+		"-failoverPredicate", "IsNetworkError()",
 		// Forward header
 		"-trustForwardHeader",
 		// Forward host
@@ -202,32 +188,46 @@ func (s *CmdSuite) TestLocationOptions(c *C) {
 	),
 		Matches, OK)
 
-	l, err := s.backend.GetLocation(h, loc)
+	fr, err := s.ng.GetFrontend(engine.FrontendKey{Id: f})
 	c.Assert(err, IsNil)
 
-	c.Assert(l.Options.Limits.MaxMemBodyBytes, Equals, int64(6*1024))
-	c.Assert(l.Options.Limits.MaxBodyBytes, Equals, int64(7*1024))
+	settings := fr.HTTPSettings()
 
-	c.Assert(l.Options.FailoverPredicate, Equals, "IsNetworkError")
-	c.Assert(l.Options.TrustForwardHeader, Equals, true)
-	c.Assert(l.Options.Hostname, Equals, "host1")
+	c.Assert(settings.Options.Limits.MaxMemBodyBytes, Equals, int64(6*1024))
+	c.Assert(settings.Options.Limits.MaxBodyBytes, Equals, int64(7*1024))
+
+	c.Assert(settings.Options.FailoverPredicate, Equals, "IsNetworkError()")
+	c.Assert(settings.Options.TrustForwardHeader, Equals, true)
+	c.Assert(settings.Options.Hostname, Equals, "host1")
+
+	c.Assert(s.run("frontend", "ls"), Matches, fmt.Sprintf(".*%v.*", f))
+	c.Assert(s.run("frontend", "show", "-id", f), Matches, fmt.Sprintf(".*%v.*", f))
+	c.Assert(s.run("frontend", "rm", "-id", f), Matches, OK)
 }
 
-func (s *CmdSuite) TestLocationUpdateOptions(c *C) {
-	up := "up"
-	c.Assert(s.run("upstream", "add", "-id", up), Matches, OK)
+func (s *CmdSuite) TestLimitsCRUD(c *C) {
+	b := "bk1"
+	c.Assert(s.run("backend", "upsert", "-id", b), Matches, OK)
 
-	h := "h"
-	c.Assert(s.run("host", "add", "-name", h), Matches, OK)
+	f := "fr1"
+	route := `Path("/path")`
+	c.Assert(s.run("frontend", "upsert", "-id", f, "-b", b, "-route", route), Matches, OK)
 
-	loc := "loc"
-	path := "/path"
-	c.Assert(s.run("location", "add", "-host", h, "-id", loc, "-up", up, "-path", path), Matches, OK)
-	s.run("location", "set_options", "-host", h, "-id", loc, "-maxMemBodyKB", "123456")
+	rl := "rl1"
+	c.Assert(s.run("ratelimit", "upsert", "-f", f, "-id", rl, "-requests", "10", "-variable", "client.ip", "-period", "3"), Matches, OK)
+	c.Assert(s.run("ratelimit", "upsert", "-f", f, "-id", rl, "-requests", "100", "-variable", "client.ip", "-period", "30"), Matches, OK)
+	c.Assert(s.run("ratelimit", "rm", "-f", f, "-id", rl), Matches, OK)
 
-	l, err := s.backend.GetLocation(h, loc)
+	cl := "cl1"
+	c.Assert(s.run("connlimit", "upsert", "-f", f, "-id", cl, "-connections", "10", "-variable", "client.ip"), Matches, OK)
+	c.Assert(s.run("connlimit", "upsert", "-f", f, "-id", cl, "-connections", "100", "-variable", "client.ip"), Matches, OK)
+
+	fk := engine.FrontendKey{Id: f}
+	out, err := s.ng.GetMiddleware(engine.MiddlewareKey{Id: cl, FrontendKey: fk})
 	c.Assert(err, IsNil)
-	c.Assert(l.Options.Limits.MaxMemBodyBytes, Equals, int64(123456*1024))
+	c.Assert(out.Id, Equals, cl)
+
+	c.Assert(s.run("connlimit", "rm", "-f", f, "-id", cl), Matches, OK)
 }
 
 func (s *CmdSuite) TestReadKeyPair(c *C) {
@@ -262,7 +262,7 @@ func (s *CmdSuite) TestReadKeyPair(c *C) {
 	data, err := box.Open(sealed)
 	c.Assert(err, IsNil)
 
-	outKeyPair, err := KeyPairFromJSON(data)
+	outKeyPair, err := engine.KeyPairFromJSON(data)
 	c.Assert(err, IsNil)
 
 	c.Assert(outKeyPair, DeepEquals, keyPair)
@@ -280,24 +280,4 @@ func (s *CmdSuite) TestNewKey(c *C) {
 
 	_, err = secret.NewBoxFromKeyString(string(bytes))
 	c.Assert(err, IsNil)
-}
-
-func (s *CmdSuite) TestPrinting(c *C) {
-	up := "up"
-	c.Assert(s.run("upstream", "add", "-id", up), Matches, OK)
-
-	h := "localhost"
-	c.Assert(s.run("host", "add", "-name", h), Matches, OK)
-
-	loc := "loc"
-	path := "/path"
-	c.Assert(s.run("location", "add", "-host", h, "-id", loc, "-up", up, "-path", path), Matches, OK)
-
-	loc2 := "loc2"
-	path2 := "/path2"
-	c.Assert(s.run("location", "add", "-host", h, "-id", loc2, "-up", up, "-path", path2), Matches, OK)
-
-	// List hosts and show host
-	c.Assert(s.run("host", "ls"), Matches, ".*"+h+".*")
-	c.Assert(s.run("host", "show", "-name", h), Matches, ".*"+h+".*")
 }

@@ -20,8 +20,7 @@ func NewMiddlewareCommands(cmd *Command) []cli.Command {
 func makeMiddlewareCommands(cmd *Command, spec *plugin.MiddlewareSpec) cli.Command {
 	flags := append([]cli.Flag{}, spec.CliFlags...)
 	flags = append(flags,
-		cli.StringFlag{Name: "host", Usage: "location host"},
-		cli.StringFlag{Name: "location, loc", Usage: "location id"},
+		cli.StringFlag{Name: "frontend, f", Usage: "location id"},
 		cli.DurationFlag{Name: "ttl", Usage: "ttl"},
 		cli.IntFlag{Name: "priority", Value: 1, Usage: "middleware priority, smaller values are lower"},
 		cli.StringFlag{Name: "id", Usage: fmt.Sprintf("%s id", spec.Type)})

@@ -165,19 +165,19 @@ func (m *Mem) GetMiddlewares(fk engine.FrontendKey) ([]engine.Middleware, error)
 func (m *Mem) GetMiddleware(mk engine.MiddlewareKey) (*engine.Middleware, error) {
 	vals, ok := m.Middlewares[mk.FrontendKey]
 	if !ok {
-		return nil, &engine.NotFoundError{}
+		return nil, &engine.NotFoundError{Message: fmt.Sprintf("'%v' not found", mk.FrontendKey)}
 	}
 	for _, v := range vals {
 		if v.Id == mk.Id {
 			return &v, nil
 		}
 	}
-	return nil, &engine.NotFoundError{}
+	return nil, &engine.NotFoundError{Message: fmt.Sprintf("'%v' not found", mk)}
 }
 
 func (m *Mem) UpsertMiddleware(fk engine.FrontendKey, md engine.Middleware, d time.Duration) error {
 	if _, ok := m.Frontends[fk]; !ok {
-		return &engine.NotFoundError{Message: fmt.Sprintf("%v not found", fk)}
+		return &engine.NotFoundError{Message: fmt.Sprintf("'%v' not found", fk)}
 	}
 	defer func() {
 		m.emit(&engine.MiddlewareUpserted{FrontendKey: fk, Middleware: md})
@@ -194,6 +194,7 @@ func (m *Mem) UpsertMiddleware(fk engine.FrontendKey, md engine.Middleware, d ti
 		}
 	}
 	vals = append(vals, md)
+	m.Middlewares[fk] = vals
 	return nil
 }
 

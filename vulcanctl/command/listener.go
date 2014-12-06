@@ -11,6 +11,20 @@ func NewListenerCommand(cmd *Command) cli.Command {
 		Usage: "Operations with socket listeners",
 		Subcommands: []cli.Command{
 			{
+				Name:   "ls",
+				Usage:  "List all listeners",
+				Flags:  []cli.Flag{},
+				Action: cmd.printListenersAction,
+			},
+			{
+				Name:  "show",
+				Usage: "Show listener details",
+				Flags: []cli.Flag{
+					cli.StringFlag{Name: "id", Usage: "listener id"},
+				},
+				Action: cmd.printListenerAction,
+			},
+			{
 				Name:  "upsert",
 				Usage: "Update or insert a listener",
 				Flags: []cli.Flag{
@@ -50,4 +64,22 @@ func (cmd *Command) deleteListenerAction(c *cli.Context) {
 		cmd.printError(err)
 	}
 	cmd.printOk("listener deleted")
+}
+
+func (cmd *Command) printListenersAction(c *cli.Context) {
+	ls, err := cmd.client.GetListeners()
+	if err != nil {
+		cmd.printError(err)
+		return
+	}
+	cmd.printListeners(ls)
+}
+
+func (cmd *Command) printListenerAction(c *cli.Context) {
+	l, err := cmd.client.GetListener(engine.ListenerKey{Id: c.String("id")})
+	if err != nil {
+		cmd.printError(err)
+		return
+	}
+	cmd.printListener(l)
 }

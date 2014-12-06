@@ -81,7 +81,6 @@ func (cmd *Command) upsertHostAction(c *cli.Context) {
 		}
 		host.Options.KeyPair = keyPair
 	}
-
 	if err := cmd.client.UpsertHost(*host); err != nil {
 		cmd.printError(err)
 		return

@@ -14,7 +14,7 @@ import (
 
 func frontendsOverview(frontends []engine.Frontend) string {
 	t := goterm.NewTable(0, 10, 5, ' ', 0)
-	fmt.Fprint(t, "Id\tHostname\tPath\tReqs/sec\t95ile [ms]\t99ile [ms]\tStatus codes %%%%\tNet. errors %%%%\n")
+	fmt.Fprint(t, "Id\tRoute\tReqs/sec\t95ile [ms]\t99ile [ms]\tStatus codes %%%%\tNet. errors %%%%\n")
 
 	if len(frontends) == 0 {
 		return t.String()
@@ -27,10 +27,10 @@ func frontendsOverview(frontends []engine.Frontend) string {
 
 func serversOverview(servers []engine.Server) string {
 	t := goterm.NewTable(0, 10, 5, ' ', 0)
-	fmt.Fprint(t, "UpstreamId\tId\tUrl\tReqs/sec\t95ile [ms]\t99ile [ms]\tStatus codes %%%%\tNet. errors %%%%\tAnomalies\n")
+	fmt.Fprint(t, "Id\tUrl\tReqs/sec\t95ile [ms]\t99ile [ms]\tStatus codes %%%%\tNet. errors %%%%\tAnomalies\n")
 
 	for _, e := range servers {
-		endpointOverview(t, e)
+		serverOverview(t, e)
 	}
 	return t.String()
 }
@@ -49,22 +49,21 @@ func frontendOverview(w io.Writer, l engine.Frontend) {
 	)
 }
 
-func endpointOverview(w io.Writer, e *engine.Server) {
-	s := e.Stats
+func serverOverview(w io.Writer, srv engine.Server) {
+	s := srv.Stats
 
 	anomalies := ""
 	if s.Verdict.IsBad {
 		anomalies = fmt.Sprintf("%v", s.Verdict.Anomalies)
 	}
 
-	fmt.Fprintf(w, "%s\t%s\t%s\t%0.1f\t%0.3f\t%0.3f\t%s\t%s\t%s\n",
-		e.UpstreamId,
-		e.Id,
-		e.Url,
+	fmt.Fprintf(w, "%s\t%s\t%0.1f\t%0.3f\t%0.3f\t%s\t%s\t%s\n",
+		srv.Id,
+		srv.URL,
 		s.RequestsPerSecond(),
-		latencyAtQuantile(95.0, &s),
-		latencyAtQuantile(99.0, &s),
-		statusCodesToString(&s),
+		latencyAtQuantile(95.0, s),
+		latencyAtQuantile(99.0, s),
+		statusCodesToString(s),
 		errRatioToString(s.NetErrorRatio()),
 		anomalies)
 }

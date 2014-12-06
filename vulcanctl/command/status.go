@@ -16,29 +16,32 @@ func NewTopCommand(cmd *Command) cli.Command {
 		Flags: []cli.Flag{
 			cli.IntFlag{Name: "limit", Usage: "How many top entries to show", Value: 20},
 			cli.IntFlag{Name: "refresh", Usage: "How often refresh (in seconds), if 0 - will display only once", Value: 1},
-			cli.StringFlag{Name: "upstream, up", Usage: "Filter locations and endpoints by upstream id", Value: ""},
-			cli.StringFlag{Name: "host", Usage: "Filter locations by hostname", Value: ""},
+			cli.StringFlag{Name: "backend, b", Usage: "Filter frontends and servers by backend id", Value: ""},
 		},
 		Action: cmd.topAction,
 	}
 }
 
 func (cmd *Command) topAction(c *cli.Context) {
-	cmd.overviewAction(c.String("hostname"), c.String("upstream"), c.Int("refresh"), c.Int("limit"))
+	cmd.overviewAction(c.String("backend"), c.Int("refresh"), c.Int("limit"))
 }
 
-func (cmd *Command) overviewAction(hostname, upstreamId string, watch int, limit int) {
+func (cmd *Command) overviewAction(backendId string, watch int, limit int) {
+	var bk *engine.BackendKey
+	if backendId != "" {
+		bk = &engine.BackendKey{Id: backendId}
+	}
 	for {
-		locations, err := cmd.client.GetTopLocations(hostname, upstreamId, limit)
+		frontends, err := cmd.client.TopFrontends(bk, limit)
 		if err != nil {
 			cmd.printError(err)
-			locations = []*backend.Location{}
+			frontends = []engine.Frontend{}
 		}
 
-		endpoints, err := cmd.client.GetTopEndpoints(upstreamId, limit)
+		servers, err := cmd.client.TopServers(bk, limit)
 		if err != nil {
 			cmd.printError(err)
-			endpoints = []*backend.Endpoint{}
+			servers = []engine.Server{}
 		}
 		t := time.Now()
 		if watch != 0 {
@@ -48,7 +51,7 @@ func (cmd *Command) overviewAction(hostname, upstreamId string, watch int, limit
 			fmt.Fprintf(cmd.out, "%s Every %d seconds. Top %d entries\n\n", t.Format("2006-01-02 15:04:05"), watch, limit)
 		}
 
-		cmd.printOverview(locations, endpoints)
+		cmd.printOverview(frontends, servers)
 		if watch != 0 {
 			goterm.Flush()
 		} else {

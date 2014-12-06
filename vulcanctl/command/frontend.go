@@ -11,6 +11,12 @@ func NewFrontendCommand(cmd *Command) cli.Command {
 		Usage: "Operations with vulcan frontends",
 		Subcommands: []cli.Command{
 			{
+				Name:   "ls",
+				Usage:  "List all frontends",
+				Flags:  []cli.Flag{},
+				Action: cmd.printFrontendsAction,
+			},
+			{
 				Name:  "show",
 				Usage: "Show frontend details",
 				Flags: []cli.Flag{
@@ -39,6 +45,15 @@ func NewFrontendCommand(cmd *Command) cli.Command {
 			},
 		},
 	}
+}
+
+func (cmd *Command) printFrontendsAction(c *cli.Context) {
+	fs, err := cmd.client.GetFrontends()
+	if err != nil {
+		cmd.printError(err)
+		return
+	}
+	cmd.printFrontends(fs)
 }
 
 func (cmd *Command) printFrontendAction(c *cli.Context) {
