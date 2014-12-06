@@ -238,11 +238,11 @@ func (s *Service) GetAPIFile() (*proxy.FileDescriptor, error) {
 	if err != nil {
 		return nil, err
 	}
-	a := backend.Address{
+	a := engine.Address{
 		Network: "tcp",
 		Address: fmt.Sprintf("%s:%d", s.options.ApiInterface, s.options.ApiPort),
 	}
-	return &server.FileDescriptor{File: file, Address: a}, nil
+	return &proxy.FileDescriptor{File: file, Address: a}, nil
 }
 
 func (s *Service) newBox() (*secret.Box, error) {
@@ -261,16 +261,17 @@ func (s *Service) newEngine() error {
 	if err != nil {
 		return err
 	}
-	b, err := etcdng.New(
-		s.registry, s.options.EtcdNodes, s.options.EtcdKey,
-		etcdbackend.Options{
+	ng, err := etcdng.New(
+		s.options.EtcdNodes, s.options.EtcdKey,
+		s.registry,
+		etcdng.Options{
 			EtcdConsistency: s.options.EtcdConsistency,
 			Box:             box,
 		})
 	if err != nil {
 		return err
 	}
-	s.backend = b
+	s.ng = ng
 	return err
 }
 
@@ -289,16 +290,16 @@ func (s *Service) reportSystemMetrics() {
 }
 
 func (s *Service) newProxy(id int) (proxy.Proxy, error) {
-	return server.NewMuxServerWithOptions(id, server.Options{
+	return proxy.New(id, proxy.Options{
 		MetricsClient:  s.metricsClient,
 		DialTimeout:    s.options.EndpointDialTimeout,
 		ReadTimeout:    s.options.ServerReadTimeout,
 		WriteTimeout:   s.options.ServerWriteTimeout,
 		MaxHeaderBytes: s.options.ServerMaxHeaderBytes,
-		DefaultListener: &backend.Listener{
+		DefaultListener: &engine.Listener{
 			Id:       "DefaultListener",
 			Protocol: "http",
-			Address: backend.Address{
+			Address: engine.Address{
 				Network: "tcp",
 				Address: fmt.Sprintf("%s:%d", s.options.Interface, s.options.Port),
 			},
@@ -308,7 +309,7 @@ func (s *Service) newProxy(id int) (proxy.Proxy, error) {
 
 func (s *Service) initApi() error {
 	s.apiApp = scroll.NewApp()
-	api.InitProxyController(s.backend, s.supervisor, s.apiApp)
+	api.InitProxyController(s.ng, s.supervisor, s.apiApp)
 	return nil
 }
 
@@ -379,9 +380,9 @@ func filesFromString(in string) ([]*proxy.FileDescriptor, error) {
 	if err := json.Unmarshal([]byte(in), &out); err != nil {
 		return nil, err
 	}
-	files := make([]*server.FileDescriptor, len(out))
+	files := make([]*proxy.FileDescriptor, len(out))
 	for i, o := range out {
-		files[i] = &server.FileDescriptor{
+		files[i] = &proxy.FileDescriptor{
 			File:    os.NewFile(uintptr(o.FileFD), o.FileName),
 			Address: o.Address,
 		}

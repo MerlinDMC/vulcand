@@ -149,7 +149,12 @@ func (n *ng) GetListener(key engine.ListenerKey) (*engine.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	return engine.ListenerFromJSON([]byte(bytes))
+	l, err := engine.ListenerFromJSON([]byte(bytes))
+	if err != nil {
+		return nil, err
+	}
+	l.Id = key.Id
+	return l, nil
 }
 
 func (n *ng) UpsertListener(listener engine.Listener) error {
@@ -197,7 +202,12 @@ func (n *ng) GetFrontend(key engine.FrontendKey) (*engine.Frontend, error) {
 	if err != nil {
 		return nil, err
 	}
-	return engine.FrontendFromJSON([]byte(bytes))
+	f, err := engine.FrontendFromJSON([]byte(bytes))
+	if err != nil {
+		return nil, err
+	}
+	f.Id = key.Id
+	return f, nil
 }
 
 func (n *ng) DeleteFrontend(fk engine.FrontendKey) error {
@@ -227,7 +237,12 @@ func (n *ng) GetBackend(key engine.BackendKey) (*engine.Backend, error) {
 	if err != nil {
 		return nil, err
 	}
-	return engine.BackendFromJSON([]byte(bytes))
+	b, err := engine.BackendFromJSON([]byte(bytes))
+	if err != nil {
+		return nil, err
+	}
+	b.Id = key.Id
+	return b, nil
 }
 
 func (n *ng) UpsertBackend(b engine.Backend) error {
@@ -312,7 +327,12 @@ func (n *ng) GetServer(sk engine.ServerKey) (*engine.Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return engine.ServerFromJSON([]byte(bytes))
+	out, err := engine.ServerFromJSON([]byte(bytes))
+	if err != nil {
+		return nil, err
+	}
+	out.Id = sk.Id
+	return out, nil
 }
 
 func (n *ng) DeleteServer(sk engine.ServerKey) error {

@@ -45,6 +45,9 @@ cover-package-with-etcd: clean
 systest: clean install
 	${VULCAN_FLAGS} go test -v ./systest
 
+systest-grep: clean install
+	${VULCAN_FLAGS} go test -v ./systest -check.f=$(e)
+
 sloccount:
 	 find . -path ./Godeps -prune -o -name "*.go" -print0 | xargs -0 wc -l
 

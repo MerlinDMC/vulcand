@@ -4,24 +4,25 @@
 package systest
 
 import (
-	"encoding/json"
+	//	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
-	"strconv"
+	//	"strconv"
 	"strings"
-	"syscall"
+	//	"syscall"
 	"testing"
 	"time"
 
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/go-etcd/etcd"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/log"
 	. "github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/testutils"
-	. "github.com/mailgun/vulcand/Godeps/_workspace/src/gopkg.in/check.v1"
-	"github.com/mailgun/vulcand/backend"
+	//	"github.com/mailgun/vulcand/engine"
 	"github.com/mailgun/vulcand/secret"
-	. "github.com/mailgun/vulcand/testutils"
+	//	. "github.com/mailgun/vulcand/testutils"
+
+	. "github.com/mailgun/vulcand/Godeps/_workspace/src/gopkg.in/check.v1"
 )
 
 func TestVulcandWithEtcd(t *testing.T) { TestingT(t) }
@@ -130,8 +131,8 @@ func (s *VESuite) TearDownTest(c *C) {
 	exec.Command("killall", "vulcand").Output()
 }
 
-// Set up a location with a path, hit this location and make sure everything worked fine
-func (s *VESuite) TestLocationCRUD(c *C) {
+// Set up a frontend hit this frontend with request and make sure everything worked fine
+func (s *VESuite) TestFrontendCRUD(c *C) {
 	called := false
 	server := NewTestServer(func(w http.ResponseWriter, r *http.Request) {
 		called = true
@@ -139,25 +140,25 @@ func (s *VESuite) TestLocationCRUD(c *C) {
 	})
 	defer server.Close()
 
-	// Create upstream and endpoint
-	up, e, url := "up1", "e1", server.URL
-	_, err := s.client.Set(s.path("upstreams", up, "endpoints", e), url, 0)
+	// Create a server
+	b, srv, url := "bk1", "srv1", server.URL
+	_, err := s.client.Set(s.path("backends", b, "servers", srv), fmt.Sprintf(`{"URL": "%s"}`, url), 0)
 	c.Assert(err, IsNil)
 
-	// Add location
-	host, locId, path := "localhost", "loc1", "/path"
-	_, err = s.client.Set(s.path("hosts", host, "locations", locId, "path"), path, 0)
-	c.Assert(err, IsNil)
-	_, err = s.client.Set(s.path("hosts", host, "locations", locId, "upstream"), up, 0)
+	// Add frontend
+	fId, route := "fr1", "Path(`/path`)"
+	_, err = s.client.Set(s.path("frontends", fId, "settings"),
+		fmt.Sprintf(`{"Type": "http", "BackendId": "%v", "Settings": {"Route": "%s"}}`, b, route), 0)
 	c.Assert(err, IsNil)
 
 	time.Sleep(time.Second)
-	response, _, err := GET(fmt.Sprintf("%s%s", s.serviceUrl, path), Opts{})
+	response, _, err := GET(fmt.Sprintf("%s%s", s.serviceUrl, "/path"), Opts{})
 	c.Assert(err, IsNil)
 	c.Assert(response.StatusCode, Equals, http.StatusOK)
 	c.Assert(called, Equals, true)
 }
 
+/*
 func (s *VESuite) TestLocationCreateUpstreamFirst(c *C) {
 	called := false
 	server := NewTestServer(func(w http.ResponseWriter, r *http.Request) {
@@ -525,3 +526,4 @@ func (s *VESuite) TestLiveBinaryUpgrade(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(string(body), Equals, "Hello 1")
 }
+*/
