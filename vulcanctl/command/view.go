@@ -59,7 +59,7 @@ func frontendsView(fs []engine.Frontend) *StringTree {
 
 func frontendView(f *engine.Frontend) *StringTree {
 	return &StringTree{
-		Node: fmt.Sprintf("frontend[%s, %s]", f.Id, f.HTTPSettings().Route),
+		Node: fmt.Sprintf("frontend[%s, %s]", f.Id, f.Route),
 	}
 }
 

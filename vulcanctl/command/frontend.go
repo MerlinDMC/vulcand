@@ -72,7 +72,7 @@ func (cmd *Command) upsertFrontendAction(c *cli.Context) {
 		cmd.printError(err)
 		return
 	}
-	f, err := engine.NewHTTPFrontend(c.String("id"), c.String("b"), settings)
+	f, err := engine.NewHTTPFrontend(c.String("id"), c.String("b"), c.String("route"), settings)
 	if err != nil {
 		cmd.printError(err)
 		return
@@ -96,14 +96,12 @@ func (cmd *Command) deleteFrontendAction(c *cli.Context) {
 func getFrontendSettings(c *cli.Context) (engine.HTTPFrontendSettings, error) {
 	s := engine.HTTPFrontendSettings{}
 
-	s.Route = c.String("route")
+	s.Limits.MaxMemBodyBytes = int64(c.Int("maxMemBodyKB") * 1024)
+	s.Limits.MaxBodyBytes = int64(c.Int("maxBodyKB") * 1024)
 
-	s.Options.Limits.MaxMemBodyBytes = int64(c.Int("maxMemBodyKB") * 1024)
-	s.Options.Limits.MaxBodyBytes = int64(c.Int("maxBodyKB") * 1024)
-
-	s.Options.FailoverPredicate = c.String("failoverPredicate")
-	s.Options.Hostname = c.String("forwardHost")
-	s.Options.TrustForwardHeader = c.Bool("trustForwardHeader")
+	s.FailoverPredicate = c.String("failoverPredicate")
+	s.Hostname = c.String("forwardHost")
+	s.TrustForwardHeader = c.Bool("trustForwardHeader")
 
 	return s, nil
 }

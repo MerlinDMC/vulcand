@@ -2,17 +2,15 @@ package proxy
 
 import (
 	"net/http"
+	"testing"
 	"time"
 
-	//	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/limit/tokenbucket"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/log"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/loadbalance/roundrobin"
-
 	. "github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/testutils"
 	. "github.com/mailgun/vulcand/Godeps/_workspace/src/gopkg.in/check.v1"
 	"github.com/mailgun/vulcand/engine"
 	. "github.com/mailgun/vulcand/testutils"
-	"testing"
 )
 
 func TestServer(t *testing.T) { TestingT(t) }
@@ -340,8 +338,7 @@ func (s *ServerSuite) TestFrontendOptionsCRUD(c *C) {
 	c.Assert(string(bodyBytes), Equals, "Hi, I'm endpoint 1")
 	c.Assert(response.StatusCode, Equals, http.StatusOK)
 
-	settings := b.F.HTTPSettings()
-	settings.Options = engine.HTTPFrontendOptions{
+	settings := engine.HTTPFrontendSettings{
 		Limits: engine.HTTPFrontendLimits{
 			MaxBodyBytes: 8,
 		},
@@ -421,9 +418,7 @@ func (s *ServerSuite) TestFrontendUpdateRoute(c *C) {
 
 	c.Assert(GETResponse(c, b.FrontendURL("/"), Opts{}), Equals, "hola")
 
-	settings := b.F.HTTPSettings()
-	settings.Route = `Path("/new")`
-	b.F.Settings = settings
+	b.F.Route = `Path("/new")`
 
 	c.Assert(s.mux.UpsertFrontend(b.F), IsNil)
 	c.Assert(GETResponse(c, b.FrontendURL("/new"), Opts{}), Equals, "hola")

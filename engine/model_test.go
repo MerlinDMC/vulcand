@@ -33,15 +33,15 @@ func (s *BackendSuite) TestHostBad(c *C) {
 }
 
 func (s *BackendSuite) TestFrontendDefaults(c *C) {
-	f, err := NewHTTPFrontend("f1", "b1", HTTPFrontendSettings{Route: `Path("/home")`, Options: HTTPFrontendOptions{}})
+	f, err := NewHTTPFrontend("f1", "b1", `Path("/home")`, HTTPFrontendSettings{})
 	c.Assert(err, IsNil)
 	c.Assert(f.GetId(), Equals, "f1")
 	c.Assert(f.String(), Not(Equals), "")
-	c.Assert(f.HTTPSettings().Route, Equals, `Path("/home")`)
+	c.Assert(f.Route, Equals, `Path("/home")`)
 }
 
 func (s *BackendSuite) TestNewFrontendWithOptions(c *C) {
-	options := HTTPFrontendOptions{
+	settings := HTTPFrontendSettings{
 		Limits: HTTPFrontendLimits{
 			MaxMemBodyBytes: 12,
 			MaxBodyBytes:    400,
@@ -50,8 +50,7 @@ func (s *BackendSuite) TestNewFrontendWithOptions(c *C) {
 		Hostname:           "host1",
 		TrustForwardHeader: true,
 	}
-	settings := HTTPFrontendSettings{Route: `Path("/home")`, Options: options}
-	f, err := NewHTTPFrontend("f1", "b1", settings)
+	f, err := NewHTTPFrontend("f1", "b1", `Path("/home")`, settings)
 	c.Assert(err, IsNil)
 	c.Assert(f.Id, Equals, "f1")
 
@@ -68,22 +67,22 @@ func (s *BackendSuite) TestNewFrontendWithOptions(c *C) {
 
 func (s *BackendSuite) TestFrontendBadParams(c *C) {
 	// Bad route
-	_, err := NewHTTPFrontend("f1", "b1", HTTPFrontendSettings{Route: "/home  -- afawf \\~"})
+	_, err := NewHTTPFrontend("f1", "b1", "/home  -- afawf \\~", HTTPFrontendSettings{})
 	c.Assert(err, NotNil)
 
 	// Empty params
-	_, err = NewHTTPFrontend("", "", HTTPFrontendSettings{})
+	_, err = NewHTTPFrontend("", "", "", HTTPFrontendSettings{})
 	c.Assert(err, NotNil)
 }
 
 func (s *BackendSuite) TestFrontendBadOptions(c *C) {
-	options := []HTTPFrontendOptions{
-		HTTPFrontendOptions{
+	settings := []HTTPFrontendSettings{
+		HTTPFrontendSettings{
 			FailoverPredicate: "bad predicate",
 		},
 	}
-	for _, o := range options {
-		f, err := NewHTTPFrontend("f1", "b", HTTPFrontendSettings{Route: `Path("/home")`, Options: o})
+	for _, s := range settings {
+		f, err := NewHTTPFrontend("f1", "b", `Path("/home")`, s)
 		c.Assert(err, NotNil)
 		c.Assert(f, IsNil)
 	}
@@ -188,7 +187,7 @@ func (s *BackendSuite) TestNewServerBadParams(c *C) {
 }
 
 func (s *BackendSuite) TestFrontendsFromJSON(c *C) {
-	f, err := NewHTTPFrontend("f1", "b1", HTTPFrontendSettings{Route: `Path("/path")`})
+	f, err := NewHTTPFrontend("f1", "b1", `Path("/path")`, HTTPFrontendSettings{})
 	c.Assert(err, IsNil)
 
 	bytes, err := json.Marshal(f)

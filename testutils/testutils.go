@@ -93,7 +93,7 @@ func MakeListener(addr string, protocol string) engine.Listener {
 }
 
 func MakeFrontend(route string, backendId string) engine.Frontend {
-	f, err := engine.NewHTTPFrontend(UID("frontend"), backendId, engine.HTTPFrontendSettings{Route: route})
+	f, err := engine.NewHTTPFrontend(UID("frontend"), backendId, route, engine.HTTPFrontendSettings{})
 	if err != nil {
 		panic(err)
 	}

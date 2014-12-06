@@ -125,16 +125,12 @@ func (h *Host) GetId() string {
 // Frontend is connected to a backend and vulcand will use the servers from this backend.
 type Frontend struct {
 	Id        string
+	Route     string
 	Type      string
 	BackendId string
 
 	Stats    *RoundTripStats `json:",omitempty"`
 	Settings interface{}     `json:",omitempty"`
-}
-
-type HTTPFrontendSettings struct {
-	Route   string
-	Options HTTPFrontendOptions
 }
 
 // Limits contains various limits one can supply for a location.
@@ -144,7 +140,7 @@ type HTTPFrontendLimits struct {
 }
 
 // Additional options to control this location, such as timeouts
-type HTTPFrontendOptions struct {
+type HTTPFrontendSettings struct {
 	// Limits contains various limits one can supply for a location.
 	Limits HTTPFrontendLimits
 	// Predicate that defines when requests are allowed to failover
@@ -186,29 +182,30 @@ func NewListener(id, protocol, network, address string) (*Listener, error) {
 	}, nil
 }
 
-func NewHTTPFrontend(id, backendId string, settings HTTPFrontendSettings) (*Frontend, error) {
+func NewHTTPFrontend(id, backendId string, route string, settings HTTPFrontendSettings) (*Frontend, error) {
 	if len(id) == 0 || len(backendId) == 0 {
 		return nil, fmt.Errorf("supply valid  route, id, and backendId")
 	}
 
 	// Make sure location path is a valid route expression
-	if !exproute.IsValid(settings.Route) {
+	if !exproute.IsValid(route) {
 		return nil, fmt.Errorf("route should be a valid route expression")
 	}
 
-	if _, err := frontendOptions(settings.Options); err != nil {
+	if _, err := frontendOptions(settings); err != nil {
 		return nil, err
 	}
 
 	return &Frontend{
 		Id:        id,
 		BackendId: backendId,
+		Route:     route,
 		Type:      HTTP,
 		Settings:  settings,
 	}, nil
 }
 
-func frontendOptions(l HTTPFrontendOptions) (*httploc.Options, error) {
+func frontendOptions(l HTTPFrontendSettings) (*httploc.Options, error) {
 	o := &httploc.Options{}
 	var err error
 
@@ -233,7 +230,7 @@ func (f *Frontend) HTTPSettings() HTTPFrontendSettings {
 }
 
 func (l HTTPFrontendSettings) GetOptions() (*httploc.Options, error) {
-	return frontendOptions(l.Options)
+	return frontendOptions(l)
 }
 
 func (f *Frontend) String() string {

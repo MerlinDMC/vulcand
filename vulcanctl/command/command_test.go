@@ -193,12 +193,12 @@ func (s *CmdSuite) TestFrontendCRUD(c *C) {
 
 	settings := fr.HTTPSettings()
 
-	c.Assert(settings.Options.Limits.MaxMemBodyBytes, Equals, int64(6*1024))
-	c.Assert(settings.Options.Limits.MaxBodyBytes, Equals, int64(7*1024))
+	c.Assert(settings.Limits.MaxMemBodyBytes, Equals, int64(6*1024))
+	c.Assert(settings.Limits.MaxBodyBytes, Equals, int64(7*1024))
 
-	c.Assert(settings.Options.FailoverPredicate, Equals, "IsNetworkError()")
-	c.Assert(settings.Options.TrustForwardHeader, Equals, true)
-	c.Assert(settings.Options.Hostname, Equals, "host1")
+	c.Assert(settings.FailoverPredicate, Equals, "IsNetworkError()")
+	c.Assert(settings.TrustForwardHeader, Equals, true)
+	c.Assert(settings.Hostname, Equals, "host1")
 
 	c.Assert(s.run("frontend", "ls"), Matches, fmt.Sprintf(".*%v.*", f))
 	c.Assert(s.run("frontend", "show", "-id", f), Matches, fmt.Sprintf(".*%v.*", f))

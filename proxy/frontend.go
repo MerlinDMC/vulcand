@@ -62,7 +62,7 @@ func newFrontend(m *mux, f engine.Frontend, b *backend) (*frontend, error) {
 	}
 
 	// Add the frontend to the router
-	if err := router.AddLocation(settings.Route, hloc); err != nil {
+	if err := router.AddLocation(f.Route, hloc); err != nil {
 		return nil, err
 	}
 
@@ -170,14 +170,12 @@ func (f *frontend) update(ef engine.Frontend, b *backend) error {
 		return err
 	}
 
-	oldsettings := oldf.HTTPSettings()
-
-	if oldsettings.Route != settings.Route {
-		log.Infof("%v updating route from %v to %v", oldsettings.Route, settings.Route)
-		if f.mux.router.AddLocation(settings.Route, f.hloc); err != nil {
+	if oldf.Route != ef.Route {
+		log.Infof("%v updating route from %v to %v", oldf.Route, ef.Route)
+		if f.mux.router.AddLocation(ef.Route, f.hloc); err != nil {
 			return err
 		}
-		if err := f.mux.router.RemoveLocationByExpression(oldsettings.Route); err != nil {
+		if err := f.mux.router.RemoveLocationByExpression(oldf.Route); err != nil {
 			return err
 		}
 	}
@@ -187,5 +185,5 @@ func (f *frontend) update(ef engine.Frontend, b *backend) error {
 func (f *frontend) remove() error {
 	f.mux.perfMon.deleteFrontend(f.key)
 	f.backend.unlinkFrontend(f.key)
-	return f.mux.router.RemoveLocationByExpression(f.frontend.HTTPSettings().Route)
+	return f.mux.router.RemoveLocationByExpression(f.frontend.Route)
 }

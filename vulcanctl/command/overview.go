@@ -40,7 +40,7 @@ func frontendOverview(w io.Writer, l engine.Frontend) {
 
 	fmt.Fprintf(w, "%s\t%s\t%0.1f\t%0.3f\t%0.3f\t%s\t%s\n",
 		l.Id,
-		l.HTTPSettings().Route,
+		l.Route,
 		s.RequestsPerSecond(),
 		latencyAtQuantile(95.0, s),
 		latencyAtQuantile(99.0, s),

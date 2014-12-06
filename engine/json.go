@@ -33,6 +33,7 @@ type rawListeners struct {
 
 type rawFrontend struct {
 	Id        string
+	Route     string
 	Type      string
 	BackendId string
 	Settings  json.RawMessage
@@ -96,11 +97,14 @@ func HostFromJSON(in []byte) (*Host, error) {
 	return NewHost(h.Name, h.Options)
 }
 
-func ListenerFromJSON(in []byte) (*Listener, error) {
+func ListenerFromJSON(in []byte, id ...string) (*Listener, error) {
 	var l *Listener
 	err := json.Unmarshal(in, &l)
 	if err != nil {
 		return nil, err
+	}
+	if len(id) != 0 {
+		l.Id = id[0]
 	}
 	return NewListener(l.Id, l.Protocol, l.Address.Network, l.Address.Address)
 }
@@ -133,7 +137,7 @@ func KeyPairFromJSON(in []byte) (*KeyPair, error) {
 	return NewKeyPair(c.Cert, c.Key)
 }
 
-func FrontendFromJSON(in []byte) (*Frontend, error) {
+func FrontendFromJSON(in []byte, id ...string) (*Frontend, error) {
 	var rf *rawFrontend
 	if err := json.Unmarshal(in, &rf); err != nil {
 		return nil, err
@@ -148,14 +152,17 @@ func FrontendFromJSON(in []byte) (*Frontend, error) {
 	if s == nil {
 		s = &HTTPFrontendSettings{}
 	}
-	f, err := NewHTTPFrontend(rf.Id, rf.BackendId, *s)
+	if len(id) != 0 {
+		rf.Id = id[0]
+	}
+	f, err := NewHTTPFrontend(rf.Id, rf.BackendId, rf.Route, *s)
 	if err != nil {
 		return nil, err
 	}
 	return f, nil
 }
 
-func MiddlewareFromJSON(in []byte, getter plugin.SpecGetter) (*Middleware, error) {
+func MiddlewareFromJSON(in []byte, getter plugin.SpecGetter, id ...string) (*Middleware, error) {
 	var ms *RawMiddleware
 	err := json.Unmarshal(in, &ms)
 	if err != nil {
@@ -168,6 +175,9 @@ func MiddlewareFromJSON(in []byte, getter plugin.SpecGetter) (*Middleware, error
 	m, err := spec.FromJSON(ms.Middleware)
 	if err != nil {
 		return nil, err
+	}
+	if len(id) != 0 {
+		ms.Id = id[0]
 	}
 	return &Middleware{
 		Id:         ms.Id,
@@ -196,7 +206,7 @@ func BackendsFromJSON(in []byte) ([]Backend, error) {
 	return out, nil
 }
 
-func BackendFromJSON(in []byte) (*Backend, error) {
+func BackendFromJSON(in []byte, id ...string) (*Backend, error) {
 	var rb *rawBackend
 
 	if err := json.Unmarshal(in, &rb); err != nil {
@@ -212,6 +222,9 @@ func BackendFromJSON(in []byte) (*Backend, error) {
 	}
 	if s == nil {
 		s = &HTTPBackendSettings{}
+	}
+	if len(id) != 0 {
+		rb.Id = id[0]
 	}
 	b, err := NewHTTPBackend(rb.Id, *s)
 	if err != nil {
@@ -258,11 +271,14 @@ func MiddlewaresFromJSON(in []byte, getter plugin.SpecGetter) ([]Middleware, err
 	return out, nil
 }
 
-func ServerFromJSON(in []byte) (*Server, error) {
+func ServerFromJSON(in []byte, id ...string) (*Server, error) {
 	var e *Server
 	err := json.Unmarshal(in, &e)
 	if err != nil {
 		return nil, err
+	}
+	if len(id) != 0 {
+		e.Id = id[0]
 	}
 	return NewServer(e.Id, e.URL)
 }

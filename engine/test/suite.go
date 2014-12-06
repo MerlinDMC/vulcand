@@ -172,9 +172,10 @@ func (s *EngineSuite) BackendDeleteUsed(c *C) {
 
 	f := engine.Frontend{
 		Id:        "f1",
+		Route:     `Path("/hello")`,
 		BackendId: b.Id,
 		Type:      engine.HTTP,
-		Settings:  engine.HTTPFrontendSettings{Route: `Path("/hello")`},
+		Settings:  engine.HTTPFrontendSettings{},
 	}
 	c.Assert(s.Engine.UpsertFrontend(f, 0), IsNil)
 
@@ -245,8 +246,9 @@ func (s *EngineSuite) FrontendCRUD(c *C) {
 	f := engine.Frontend{
 		Id:        "f1",
 		BackendId: b.Id,
+		Route:     `Path("/hello")`,
 		Type:      engine.HTTP,
-		Settings:  engine.HTTPFrontendSettings{Route: `Path("/hello")`},
+		Settings:  engine.HTTPFrontendSettings{},
 	}
 
 	c.Assert(s.Engine.UpsertFrontend(f, 0), IsNil)
@@ -267,10 +269,7 @@ func (s *EngineSuite) FrontendCRUD(c *C) {
 
 	f.BackendId = "b1"
 	f.Settings = engine.HTTPFrontendSettings{
-		Route: `Path("/hello")`,
-		Options: engine.HTTPFrontendOptions{
-			Hostname: "host1",
-		},
+		Hostname: "host1",
 	}
 	c.Assert(s.Engine.UpsertFrontend(f, 0), IsNil)
 
@@ -297,8 +296,9 @@ func (s *EngineSuite) FrontendExpire(c *C) {
 	f := engine.Frontend{
 		Id:        "f1",
 		BackendId: b.Id,
+		Route:     `Path("/hello")`,
 		Type:      engine.HTTP,
-		Settings:  engine.HTTPFrontendSettings{Route: `Path("/hello")`},
+		Settings:  engine.HTTPFrontendSettings{},
 	}
 	c.Assert(s.Engine.UpsertFrontend(f, time.Second), IsNil)
 
@@ -317,7 +317,8 @@ func (s *EngineSuite) FrontendBadBackend(c *C) {
 			Id:        "f1",
 			Type:      engine.HTTP,
 			BackendId: "Nonexistent",
-			Settings:  engine.HTTPFrontendSettings{Route: `Path("/hello")`},
+			Route:     `Path("/hello")`,
+			Settings:  engine.HTTPFrontendSettings{},
 		}, 0),
 		NotNil)
 }
@@ -329,7 +330,8 @@ func (s *EngineSuite) MiddlewareCRUD(c *C) {
 	f := engine.Frontend{
 		Id:        "f1",
 		Type:      engine.HTTP,
-		Settings:  engine.HTTPFrontendSettings{Route: `Path("/hello")`},
+		Route:     `Path("/hello")`,
+		Settings:  engine.HTTPFrontendSettings{},
 		BackendId: b.Id,
 	}
 	c.Assert(s.Engine.UpsertFrontend(f, 0), IsNil)
@@ -373,9 +375,10 @@ func (s *EngineSuite) MiddlewareExpire(c *C) {
 
 	f := engine.Frontend{
 		Id:        "f1",
+		Route:     `Path("/hello")`,
 		BackendId: b.Id,
 		Type:      engine.HTTP,
-		Settings:  engine.HTTPFrontendSettings{Route: `Path("/hello")`},
+		Settings:  engine.HTTPFrontendSettings{},
 	}
 	c.Assert(s.Engine.UpsertFrontend(f, 0), IsNil)
 	s.collectChanges(c, 2)
@@ -409,9 +412,10 @@ func (s *EngineSuite) MiddlewareBadType(c *C) {
 
 	f := engine.Frontend{
 		Id:        "f1",
+		Route:     `Path("/hello")`,
 		Type:      engine.HTTP,
 		BackendId: b.Id,
-		Settings:  engine.HTTPFrontendSettings{Route: `Path("/hello")`},
+		Settings:  engine.HTTPFrontendSettings{},
 	}
 	c.Assert(s.Engine.UpsertFrontend(f, 0), IsNil)
 	s.collectChanges(c, 2)

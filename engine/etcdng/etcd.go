@@ -149,11 +149,10 @@ func (n *ng) GetListener(key engine.ListenerKey) (*engine.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	l, err := engine.ListenerFromJSON([]byte(bytes))
+	l, err := engine.ListenerFromJSON([]byte(bytes), key.Id)
 	if err != nil {
 		return nil, err
 	}
-	l.Id = key.Id
 	return l, nil
 }
 
@@ -202,12 +201,7 @@ func (n *ng) GetFrontend(key engine.FrontendKey) (*engine.Frontend, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, err := engine.FrontendFromJSON([]byte(bytes))
-	if err != nil {
-		return nil, err
-	}
-	f.Id = key.Id
-	return f, nil
+	return engine.FrontendFromJSON([]byte(bytes), key.Id)
 }
 
 func (n *ng) DeleteFrontend(fk engine.FrontendKey) error {
@@ -237,12 +231,7 @@ func (n *ng) GetBackend(key engine.BackendKey) (*engine.Backend, error) {
 	if err != nil {
 		return nil, err
 	}
-	b, err := engine.BackendFromJSON([]byte(bytes))
-	if err != nil {
-		return nil, err
-	}
-	b.Id = key.Id
-	return b, nil
+	return engine.BackendFromJSON([]byte(bytes), key.Id)
 }
 
 func (n *ng) UpsertBackend(b engine.Backend) error {
@@ -283,12 +272,7 @@ func (n *ng) GetMiddleware(key engine.MiddlewareKey) (*engine.Middleware, error)
 	if err != nil {
 		return nil, err
 	}
-	out, err := engine.MiddlewareFromJSON([]byte(bytes), n.registry.GetSpec)
-	if err != nil {
-		return nil, err
-	}
-	out.Id = key.Id
-	return out, nil
+	return engine.MiddlewareFromJSON([]byte(bytes), n.registry.GetSpec, key.Id)
 }
 
 func (n *ng) UpsertMiddleware(fk engine.FrontendKey, m engine.Middleware, ttl time.Duration) error {
@@ -327,12 +311,7 @@ func (n *ng) GetServer(sk engine.ServerKey) (*engine.Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	out, err := engine.ServerFromJSON([]byte(bytes))
-	if err != nil {
-		return nil, err
-	}
-	out.Id = sk.Id
-	return out, nil
+	return engine.ServerFromJSON([]byte(bytes), sk.Id)
 }
 
 func (n *ng) DeleteServer(sk engine.ServerKey) error {

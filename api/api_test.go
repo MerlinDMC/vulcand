@@ -194,7 +194,7 @@ func (s *ApiSuite) TestFrontendCRUD(c *C) {
 
 	c.Assert(s.client.UpsertBackend(*b), IsNil)
 
-	f, err := engine.NewHTTPFrontend("f1", b.Id, engine.HTTPFrontendSettings{Route: `Path("/")`})
+	f, err := engine.NewHTTPFrontend("f1", b.Id, `Path("/")`, engine.HTTPFrontendSettings{})
 	c.Assert(err, IsNil)
 	fk := engine.FrontendKey{Id: f.Id}
 
@@ -209,8 +209,9 @@ func (s *ApiSuite) TestFrontendCRUD(c *C) {
 	c.Assert(out, DeepEquals, f)
 
 	settings := f.HTTPSettings()
-	settings.Route = `Path("/v2")`
+	settings.Hostname = `localhost`
 	f.Settings = settings
+	f.Route = `Path("/v2")`
 
 	c.Assert(s.client.UpsertFrontend(*f, 0), IsNil)
 
@@ -246,7 +247,7 @@ func (s *ApiSuite) TestMiddlewareCRUD(c *C) {
 
 	c.Assert(s.client.UpsertBackend(*b), IsNil)
 
-	f, err := engine.NewHTTPFrontend("f1", b.Id, engine.HTTPFrontendSettings{Route: `Path("/")`})
+	f, err := engine.NewHTTPFrontend("f1", b.Id, `Path("/")`, engine.HTTPFrontendSettings{})
 	c.Assert(err, IsNil)
 	fk := engine.FrontendKey{Id: f.Id}
 
