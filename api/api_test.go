@@ -91,11 +91,11 @@ func (s *ApiSuite) TestHostCRUD(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(out.Name, Equals, host.Name)
 
-	host.Options.KeyPair = testutils.NewTestKeyPair()
+	host.Settings.KeyPair = testutils.NewTestKeyPair()
 	c.Assert(s.client.UpsertHost(host), IsNil)
 
 	out, err = s.ng.GetHost(engine.HostKey{Name: host.Name})
-	c.Assert(out.Options.KeyPair, DeepEquals, host.Options.KeyPair)
+	c.Assert(out.Settings.KeyPair, DeepEquals, host.Settings.KeyPair)
 
 	err = s.client.DeleteHost(engine.HostKey{Name: host.Name})
 	c.Assert(err, IsNil)

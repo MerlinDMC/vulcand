@@ -94,13 +94,13 @@ func (n *ng) GetHost(key engine.HostKey) (*engine.Host, error) {
 	}
 
 	var keyPair *engine.KeyPair
-	if len(host.Options.KeyPair) != 0 {
-		if err := n.openSealedJSONVal(host.Options.KeyPair, &keyPair); err != nil {
+	if len(host.Settings.KeyPair) != 0 {
+		if err := n.openSealedJSONVal(host.Settings.KeyPair, &keyPair); err != nil {
 			return nil, err
 		}
 	}
 
-	return engine.NewHost(key.Name, engine.HostOptions{Default: host.Options.Default, KeyPair: keyPair})
+	return engine.NewHost(key.Name, engine.HostSettings{Default: host.Settings.Default, KeyPair: keyPair})
 }
 
 func (n *ng) UpsertHost(h engine.Host) error {
@@ -108,17 +108,17 @@ func (n *ng) UpsertHost(h engine.Host) error {
 
 	val := host{
 		Name: h.Name,
-		Options: hostOptions{
-			Default: h.Options.Default,
+		Settings: hostSettings{
+			Default: h.Settings.Default,
 		},
 	}
 
-	if h.Options.KeyPair != nil {
-		bytes, err := n.sealJSONVal(h.Options.KeyPair)
+	if h.Settings.KeyPair != nil {
+		bytes, err := n.sealJSONVal(h.Settings.KeyPair)
 		if err != nil {
 			return err
 		}
-		val.Options.KeyPair = bytes
+		val.Settings.KeyPair = bytes
 	}
 
 	return n.setJSONVal(hostKey, val, noTTL)
@@ -734,11 +734,11 @@ func setDefaults(o Options) Options {
 }
 
 type host struct {
-	Name    string
-	Options hostOptions
+	Name     string
+	Settings hostSettings
 }
 
-type hostOptions struct {
+type hostSettings struct {
 	Default bool
-	KeyPair []byte // this is a sealed key pair
+	KeyPair []byte
 }

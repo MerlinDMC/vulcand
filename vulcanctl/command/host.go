@@ -68,7 +68,7 @@ func (cmd *Command) printHostAction(c *cli.Context) {
 }
 
 func (cmd *Command) upsertHostAction(c *cli.Context) {
-	host, err := engine.NewHost(c.String("name"), engine.HostOptions{})
+	host, err := engine.NewHost(c.String("name"), engine.HostSettings{})
 	if err != nil {
 		cmd.printError(err)
 		return
@@ -79,7 +79,7 @@ func (cmd *Command) upsertHostAction(c *cli.Context) {
 			cmd.printError(fmt.Errorf("failed to read key pair: %s", err))
 			return
 		}
-		host.Options.KeyPair = keyPair
+		host.Settings.KeyPair = keyPair
 	}
 	if err := cmd.client.UpsertHost(*host); err != nil {
 		cmd.printError(err)

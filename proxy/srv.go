@@ -53,10 +53,10 @@ func newSrv(m *mux, l engine.Listener) (*srv, error) {
 	defaultHost := ""
 	keyPairs := make(map[engine.HostKey]engine.KeyPair)
 	for hk, h := range m.hosts {
-		if h.Options.KeyPair != nil {
-			keyPairs[hk] = *h.Options.KeyPair
+		if h.Settings.KeyPair != nil {
+			keyPairs[hk] = *h.Settings.KeyPair
 		}
-		if h.Options.Default {
+		if h.Settings.Default {
 			defaultHost = hk.Name
 		}
 	}
@@ -91,7 +91,7 @@ func (s *srv) upsertKeyPair(hk engine.HostKey, keyPair *engine.KeyPair) error {
 
 func (s *srv) setDefaultHost(host engine.Host) error {
 	oldDefault := s.defaultHost
-	if host.Options.Default {
+	if host.Settings.Default {
 		s.defaultHost = host.Name
 	}
 	if oldDefault != s.defaultHost && s.isTLS() {

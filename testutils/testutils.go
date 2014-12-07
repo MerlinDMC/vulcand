@@ -79,8 +79,8 @@ func MakeBatch(b Batch) BatchVal {
 
 func MakeHost(name string, keyPair *engine.KeyPair) engine.Host {
 	return engine.Host{
-		Name:    name,
-		Options: engine.HostOptions{KeyPair: keyPair},
+		Name:     name,
+		Settings: engine.HostSettings{KeyPair: keyPair},
 	}
 }
 

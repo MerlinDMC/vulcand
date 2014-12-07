@@ -69,8 +69,8 @@ func (s *EngineSuite) HostCRUD(c *C) {
 func (s *EngineSuite) HostWithKeyPair(c *C) {
 	host := engine.Host{Name: "localhost"}
 
-	host.Options.Default = true
-	host.Options.KeyPair = &engine.KeyPair{
+	host.Settings.Default = true
+	host.Settings.KeyPair = &engine.KeyPair{
 		Key:  []byte("hello"),
 		Cert: []byte("world"),
 	}
@@ -92,9 +92,9 @@ func (s *EngineSuite) HostUpsertKeyPair(c *C) {
 	c.Assert(s.Engine.UpsertHost(host), IsNil)
 
 	hostNoKeyPair := host
-	hostNoKeyPair.Options.KeyPair = nil
+	hostNoKeyPair.Settings.KeyPair = nil
 
-	host.Options.KeyPair = &engine.KeyPair{
+	host.Settings.KeyPair = &engine.KeyPair{
 		Key:  []byte("hello"),
 		Cert: []byte("world"),
 	}

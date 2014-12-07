@@ -56,7 +56,7 @@ func (m *mux) String() string {
 
 func New(id int, o Options) (*mux, error) {
 	o = setDefaults(o)
-	return &mux{
+	m := &mux{
 		id:  id,
 		wg:  &sync.WaitGroup{},
 		mtx: &sync.RWMutex{},
@@ -71,7 +71,13 @@ func New(id int, o Options) (*mux, error) {
 		backends:  make(map[engine.BackendKey]*backend),
 		frontends: make(map[engine.FrontendKey]*frontend),
 		hosts:     make(map[engine.HostKey]engine.Host),
-	}, nil
+	}
+	if m.options.DefaultListener != nil {
+		if err := m.upsertListener(*m.options.DefaultListener); err != nil {
+			return nil, err
+		}
+	}
+	return m, nil
 }
 
 func (m *mux) GetFiles() ([]*FileDescriptor, error) {
@@ -152,12 +158,6 @@ func (m *mux) Start() error {
 		return fmt.Errorf("%s can start only from init state, got %d", m, m.state)
 	}
 
-	if m.options.DefaultListener != nil {
-		if err := m.upsertListener(*m.options.DefaultListener); err != nil {
-			return err
-		}
-	}
-
 	m.state = stateActive
 	for _, s := range m.servers {
 		if err := s.start(); err != nil {
@@ -210,7 +210,7 @@ func (m *mux) UpsertHost(host engine.Host) error {
 
 	for _, s := range m.servers {
 		if s.isTLS() {
-			if err := s.upsertKeyPair(engine.HostKey{Name: host.Name}, host.Options.KeyPair); err != nil {
+			if err := s.upsertKeyPair(engine.HostKey{Name: host.Name}, host.Settings.KeyPair); err != nil {
 				return err
 			}
 		}
@@ -229,7 +229,7 @@ func (m *mux) DeleteHost(hk engine.HostKey) error {
 		return &engine.NotFoundError{Message: fmt.Sprintf("%v not found", hk)}
 	}
 
-	if host.Options.KeyPair == nil {
+	if host.Settings.KeyPair == nil {
 		return nil
 	}
 

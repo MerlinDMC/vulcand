@@ -102,7 +102,7 @@ func (s *CmdSuite) TestHostCRUD(c *C) {
 
 	h, err := s.ng.GetHost(engine.HostKey{Name: host})
 	c.Assert(err, IsNil)
-	c.Assert(h.Options.KeyPair, DeepEquals, keyPair)
+	c.Assert(h.Settings.KeyPair, DeepEquals, keyPair)
 
 	c.Assert(s.run("host", "show", "-name", host), Matches, ".*"+host+".*")
 	c.Assert(s.run("host", "rm", "-name", host), Matches, OK)

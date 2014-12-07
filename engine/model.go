@@ -84,7 +84,7 @@ func (a *Address) Equals(o Address) bool {
 	return a.Network == o.Network && a.Address == o.Address
 }
 
-type HostOptions struct {
+type HostSettings struct {
 	KeyPair *KeyPair
 	Default bool
 }
@@ -100,17 +100,17 @@ func (h HostKey) String() string {
 // Incoming requests are matched by their hostname first. Hostname is defined by incoming 'Host' header.
 // E.g. curl http://example.com/alice will be matched by the host example.com first.
 type Host struct {
-	Name    string
-	Options HostOptions
+	Name     string
+	Settings HostSettings
 }
 
-func NewHost(name string, options HostOptions) (*Host, error) {
+func NewHost(name string, settings HostSettings) (*Host, error) {
 	if name == "" {
 		return nil, fmt.Errorf("Hostname can not be empty")
 	}
 	return &Host{
-		Name:    name,
-		Options: options,
+		Name:     name,
+		Settings: settings,
 	}, nil
 }
 

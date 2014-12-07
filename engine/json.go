@@ -88,13 +88,16 @@ func FrontendsFromJSON(in []byte) ([]Frontend, error) {
 	return out, nil
 }
 
-func HostFromJSON(in []byte) (*Host, error) {
+func HostFromJSON(in []byte, name ...string) (*Host, error) {
 	var h *Host
 	err := json.Unmarshal(in, &h)
 	if err != nil {
 		return nil, err
 	}
-	return NewHost(h.Name, h.Options)
+	if len(name) != 0 {
+		h.Name = name[0]
+	}
+	return NewHost(h.Name, h.Settings)
 }
 
 func ListenerFromJSON(in []byte, id ...string) (*Listener, error) {

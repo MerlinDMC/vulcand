@@ -191,7 +191,7 @@ func (s *ServerSuite) TestHostKeyPairUpdate(c *C) {
 
 	c.Assert(GETResponse(c, b.FrontendURL("/"), Opts{}), Equals, "Hi, I'm endpoint")
 
-	b.H.Options.KeyPair = &engine.KeyPair{Key: localhostKey2, Cert: localhostCert2}
+	b.H.Settings.KeyPair = &engine.KeyPair{Key: localhostKey2, Cert: localhostCert2}
 
 	c.Assert(s.mux.UpsertHost(b.H), IsNil)
 	c.Assert(GETResponse(c, b.FrontendURL("/"), Opts{}), Equals, "Hi, I'm endpoint")
@@ -223,7 +223,7 @@ func (s *ServerSuite) TestSNI(c *C) {
 		Protocol: engine.HTTPS,
 		KeyPair:  &engine.KeyPair{Key: localhostKey2, Cert: localhostCert2},
 	})
-	b2.H.Options.Default = true
+	b2.H.Settings.Default = true
 
 	c.Assert(s.mux.UpsertHost(b.H), IsNil)
 	c.Assert(s.mux.UpsertHost(b2.H), IsNil)

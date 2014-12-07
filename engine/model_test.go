@@ -19,7 +19,7 @@ type BackendSuite struct {
 var _ = Suite(&BackendSuite{})
 
 func (s *BackendSuite) TestHostNew(c *C) {
-	h, err := NewHost("localhost", HostOptions{})
+	h, err := NewHost("localhost", HostSettings{})
 	c.Assert(err, IsNil)
 	c.Assert(h.Name, Equals, "localhost")
 	c.Assert(h.Name, Equals, h.GetId())
@@ -27,7 +27,7 @@ func (s *BackendSuite) TestHostNew(c *C) {
 }
 
 func (s *BackendSuite) TestHostBad(c *C) {
-	h, err := NewHost("", HostOptions{})
+	h, err := NewHost("", HostSettings{})
 	c.Assert(err, NotNil)
 	c.Assert(h, IsNil)
 }
