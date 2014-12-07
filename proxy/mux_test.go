@@ -477,7 +477,7 @@ func (s *ServerSuite) TestServerAddBad(c *C) {
 
 	c.Assert(s.mux.Start(), IsNil)
 
-	b := MakeBatch(Batch{Addr: "localhost:11300", Route: `Path("/")`, URL: e.URL})
+	b := MakeBatch(Batch{Addr: "localhost:11500", Route: `Path("/")`, URL: e.URL})
 
 	c.Assert(s.mux.UpsertServer(b.BK, b.S), IsNil)
 	c.Assert(s.mux.UpsertFrontend(b.F), IsNil)
