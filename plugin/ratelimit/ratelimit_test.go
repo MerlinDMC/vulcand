@@ -8,7 +8,6 @@ import (
 
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/codegangsta/cli"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/timetools"
-	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/vulcan/request"
 	. "github.com/mailgun/vulcand/Godeps/_workspace/src/gopkg.in/check.v1"
 	"github.com/mailgun/vulcand/plugin"
 )
@@ -46,7 +45,7 @@ func (s *RateLimitSuite) TestFromOther(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(fmt.Sprint(rl), Equals, "reqs/1s=1, burst=10, var=client.ip, rateVar=request.header.X-Rates")
 
-	out, err := rl.NewMiddleware()
+	out, err := rl.NewHandler(nil)
 	c.Assert(out, NotNil)
 	c.Assert(err, IsNil)
 }
@@ -63,7 +62,7 @@ func (s *RateLimitSuite) TestFromOtherNoConfigVar(c *C) {
 	c.Assert(rl, NotNil)
 	c.Assert(err, IsNil)
 
-	out, err := rl.NewMiddleware()
+	out, err := rl.NewHandler(nil)
 	c.Assert(out, NotNil)
 	c.Assert(err, IsNil)
 }
@@ -137,7 +136,7 @@ func (s *RateLimitSuite) TestFromCli(c *C) {
 		c.Assert(err, IsNil)
 
 		rl := out.(*RateLimit)
-		m, err := rl.NewMiddleware()
+		m, err := rl.NewHandler(nil)
 		c.Assert(m, NotNil)
 		c.Assert(err, IsNil)
 	}
@@ -159,7 +158,7 @@ func (s *RateLimitSuite) TestRequestProcessing(c *C) {
 			clock:         s.clock,
 		})
 
-	rli, _ := rl.NewMiddleware()
+	rli, _ := rl.NewHandler(nil)
 
 	request := &request.BaseRequest{
 		HttpRequest: &http.Request{
