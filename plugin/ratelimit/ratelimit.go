@@ -9,8 +9,8 @@ import (
 
 	"github.com/mailgun/oxy/ratelimit"
 	"github.com/mailgun/oxy/utils"
+	"github.com/mailgun/timetools"
 	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/codegangsta/cli"
-	"github.com/mailgun/vulcand/Godeps/_workspace/src/github.com/mailgun/timetools"
 	"github.com/mailgun/vulcand/plugin"
 )
 
@@ -92,7 +92,8 @@ func (r *RateLimit) NewHandler(next http.Handler) (http.Handler, error) {
 	if err := defaultRates.Add(time.Duration(r.PeriodSeconds)*time.Second, r.Requests, r.Burst); err != nil {
 		return nil, err
 	}
-	return ratelimit.New(next, r.extract, defaultRates, ratelimit.ExtractRates(r.extractRates))
+	return ratelimit.New(next, r.extract, defaultRates,
+		ratelimit.ExtractRates(r.extractRates), ratelimit.Clock(r.clock))
 }
 
 func (rl *RateLimit) String() string {
